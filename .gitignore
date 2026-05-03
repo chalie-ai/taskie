@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual env
+venv/
+.venv/
+env/
+
+# Database
+instance/
+*.db
+*.sqlite
+
+# Environment & secrets
+.env
+.env.*
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude / Anthropic — never commit
+.claude/
+CLAUDE.md
+.claude.json
+.claude-config
+.anthropic/
+anthropic.json
+
+# Docker
+docker-compose.override.yml
