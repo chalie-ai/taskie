@@ -2,7 +2,7 @@ from flask import Flask, send_from_directory
 from flask_cors import CORS
 from flask_migrate import Migrate
 from config import Config
-from models import db
+from src.models import db, User
 
 
 def create_app():
@@ -12,19 +12,13 @@ def create_app():
     db.init_app(app)
     Migrate(app, db)
 
-    from routes.api.cycles import cycles_bp
-    from routes.api.projects import projects_bp
-    from routes.api.tickets import tickets_bp
-    from routes.api.comments import comments_bp
-    from routes.api.pr_links import pr_links_bp
-    from routes.api.users import users_bp
+    from src.routes import register_all
+    register_all(app)
 
-    app.register_blueprint(cycles_bp, url_prefix='/api')
-    app.register_blueprint(projects_bp, url_prefix='/api')
-    app.register_blueprint(tickets_bp, url_prefix='/api')
-    app.register_blueprint(comments_bp, url_prefix='/api')
-    app.register_blueprint(pr_links_bp, url_prefix='/api')
-    app.register_blueprint(users_bp, url_prefix='/api')
+    with app.app_context():
+        db.create_all()
+        from src.services.user_service import UserService
+        UserService.bootstrap_master(app)
 
     @app.route('/')
     def index():

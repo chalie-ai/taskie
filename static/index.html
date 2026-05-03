@@ -346,6 +346,24 @@
     *:hover::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); }
     ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.15) !important; }
     ::-webkit-scrollbar-track { background: transparent; }
+
+    /* ── Login ── */
+    .login-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 3000; display: grid; place-items: center; }
+    .login-card { width: min(380px, 90vw); background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px 28px 24px; box-shadow: var(--shadow-lg); }
+    .login-card h2 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 6px; }
+    .login-card .sub { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+    .login-card .field { margin-bottom: 14px; }
+    .login-card label { font-size: 12px; font-weight: 500; color: var(--text-muted); display: block; margin-bottom: 4px; }
+    .login-card input { width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; font-family: inherit; outline: none; }
+    .login-card input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+    .login-error { color: var(--p-high); font-size: 12px; margin-bottom: 10px; display: none; }
+
+    /* ── Profile ── */
+    .profile-page { flex: 1; overflow: auto; padding: 24px 24px 32px; max-width: 600px; }
+    .profile-section { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; margin-bottom: 16px; }
+    .profile-section h3 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 12px; }
+    .token-box { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); font-family: var(--font-mono); font-size: 12.5px; word-break: break-all; }
+    .token-box button { flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -399,6 +417,10 @@
 
     <div class="sb-section">
       <div class="sb-section-title"><span>People</span></div>
+      <button class="sb-item view-trigger" data-view="profile">
+        <span class="sb-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="2.5"/><path d="M2.5 14c0-3.5 2.5-5.5 5.5-5.5s5.5 2 5.5 5.5"/></svg></span>
+        <span>Profile</span>
+      </button>
       <button class="sb-item view-trigger" data-view="users">
         <span class="sb-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="4.5" r="2.5"/><path d="M1.5 14c0-3 2-5.5 4.5-5.5s4.5 2.5 4.5 5.5"/><circle cx="11" cy="5" r="1.5"/><path d="M10 8.5c1 .5 2.5 1.5 2.5 3.5h3"/></svg></span>
         <span>Users</span>
@@ -407,9 +429,9 @@
     </div>
 
     <div class="sb-foot">
-      <div class="sb-user">
-        <span class="sb-avatar">DY</span>
-        <span style="font-weight:500">Dylan</span>
+      <div class="sb-user" id="sb-user-area" onclick="App.setView('profile')">
+        <span class="sb-avatar" id="sb-avatar">?</span>
+        <span style="font-weight:500" id="sb-user-name">Login</span>
       </div>
     </div>
   </aside>
@@ -478,6 +500,20 @@ const TYPE_CLASS = { bug:'bug', feature:'feature', chore:'chore' };
 const PRIO_LEVELS = { urgent:3, high:3, medium:2, low:1, none:0 };
 
 // ── State ──
+const AUTH = {
+  get() { try { return JSON.parse(localStorage.getItem('tt_auth')||'null'); } catch { return null; } },
+  set(data) { localStorage.setItem('tt_auth', JSON.stringify(data)); },
+  clear() { localStorage.removeItem('tt_auth'); },
+  token() { const a = this.get(); return a?.access_token || null; },
+  user() { const a = this.get(); return a?.user || null; },
+};
+
+// jQuery AJAX prefilter to auto-attach Bearer token
+$.ajaxPrefilter(function(opts) {
+  const t = AUTH.token();
+  if (t) opts.headers = { ...(opts.headers||{}), 'Authorization': 'Bearer '+t };
+});
+
 const App = {
   view: 'inbox',
   mode: 'board',
@@ -491,6 +527,20 @@ const App = {
   ticketDetail: null,
 
   async init() {
+    if (!AUTH.token()) { this.showLogin(); return; }
+    try {
+      await this.loadAll();
+      this.render();
+      this.bindKeys();
+      this.checkHash();
+      $(window).on('hashchange', () => this.checkHash());
+      this.updateSidebarUser();
+    } catch (e) {
+      if (e.status === 401) { AUTH.clear(); this.showLogin(); }
+    }
+  },
+
+  async loadAll() {
     const [cycles, projects, tickets, users] = await Promise.all([
       $.get('/api/cycles'),
       $.get('/api/projects'),
@@ -499,10 +549,43 @@ const App = {
     ]);
     this.cycles = cycles; this.projects = projects; this.tickets = tickets; this.users = users;
     if (cycles.length > 0) this.activeCycleId = cycles.find(c => c.active)?.id || cycles[0].id;
-    this.render();
-    this.bindKeys();
-    this.checkHash();
-    $(window).on('hashchange', () => this.checkHash());
+  },
+
+  updateSidebarUser() {
+    const u = AUTH.user();
+    if (u) {
+      const init = (u.name||'?')[0].toUpperCase();
+      $('#sb-avatar').text(init);
+      $('#sb-user-name').text(u.name);
+    }
+  },
+
+  showLogin() {
+    $('body').html(`<div class="login-overlay">
+      <div class="login-card">
+        <div class="sb-logo" style="margin-bottom:12px">⌥</div>
+        <h2>Sign in</h2>
+        <div class="sub">Enter your credentials to continue</div>
+        <div class="login-error" id="login-error">Invalid email or password</div>
+        <div class="field"><label>Email</label><input type="email" id="login-email" placeholder="admin@tasktracker.local" autofocus></div>
+        <div class="field"><label>Password</label><input type="password" id="login-password" placeholder="Enter password"></div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:8px" onclick="App.doLogin()">Sign in</button>
+      </div>
+    </div>`);
+    $('#login-password').on('keydown', function(e) { if (e.key==='Enter') App.doLogin(); });
+  },
+
+  async doLogin() {
+    const email = $('#login-email').val().trim();
+    const password = $('#login-password').val();
+    if (!email || !password) return;
+    try {
+      const resp = await $.ajax({ url: '/api/auth/token', method: 'POST', contentType: 'application/json', data: JSON.stringify({ email, password }) });
+      AUTH.set(resp);
+      location.reload();
+    } catch (e) {
+      $('#login-error').show();
+    }
   },
 
   checkHash() {
@@ -532,6 +615,8 @@ const App = {
       this.renderProjectsPage();
     } else if (this.view === 'users') {
       this.renderUsersPage();
+    } else if (this.view === 'profile') {
+      this.renderProfilePage();
     } else {
       this.renderCrumbs();
       $('#content-area').html(this.mode === 'board' ? this.boardHTML() : this.listHTML());
@@ -1025,6 +1110,61 @@ const App = {
       </div>
     </div>`);
   },
+
+  renderProfilePage() {
+    const u = AUTH.user();
+    const fullUser = this.users.find(x => x.id == u?.id) || {};
+    const token = fullUser.agent_token || '';
+    $('#crumbs').html('');
+    $('#content-area').html(`<div class="profile-page">
+      <div class="page-header"><div><h1>Profile</h1><div class="sub">Your account details</div></div></div>
+      <div class="profile-section">
+        <h3>Account</h3>
+        <table style="width:100%">
+          <tr><td style="padding:6px 12px 6px 0;color:var(--text-muted);font-size:12px;width:80px">Name</td><td style="font-weight:500">${this.esc(fullUser.name||'')}</td></tr>
+          <tr><td style="padding:6px 12px 6px 0;color:var(--text-muted);font-size:12px">Surname</td><td style="font-weight:500">${this.esc(fullUser.surname||'')}</td></tr>
+          <tr><td style="padding:6px 12px 6px 0;color:var(--text-muted);font-size:12px">Email</td><td style="font-weight:500">${this.esc(fullUser.email||'')}</td></tr>
+          <tr><td style="padding:6px 12px 6px 0;color:var(--text-muted);font-size:12px">Role</td><td><span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;background:${fullUser.role==='admin'?'oklch(0.94 0.06 295)':'oklch(0.95 0.06 150)'};color:${fullUser.role==='admin'?'oklch(0.45 0.16 295)':'oklch(0.4 0.14 150)'}">${fullUser.role||'member'}</span></td></tr>
+        </table>
+      </div>
+      <div class="profile-section">
+        <h3>Agent Token</h3>
+        <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px">Use this token to authenticate MCP tools. Treat it like a password — never commit it.</p>
+        <div class="token-box"><span id="agent-token-display">${token}</span><button class="btn btn-secondary btn-sm" onclick="App.copyToken()">Copy</button></div>
+      </div>
+      <div class="profile-section">
+        <h3>Change Password</h3>
+        <div class="field"><label>Current password</label><input type="password" id="cp-old" style="width:100%"></div>
+        <div class="field"><label>New password</label><input type="password" id="cp-new" style="width:100%"></div>
+        <button class="btn btn-primary" onclick="App.changePassword()">Change Password</button>
+        <span id="cp-msg" style="margin-left:10px;font-size:12px"></span>
+      </div>
+      <button class="btn btn-secondary" style="margin-top:12px" onclick="App.logout()">Sign out</button>
+    </div>`);
+  },
+
+  copyToken() {
+    const t = $('#agent-token-display').text();
+    navigator.clipboard.writeText(t).then(() => {
+      const btn = $('.token-box button');
+      btn.text('Copied!');
+      setTimeout(() => btn.text('Copy'), 1500);
+    });
+  },
+
+  async changePassword() {
+    const oldPw = $('#cp-old').val();
+    const newPw = $('#cp-new').val();
+    if (!oldPw || !newPw) return;
+    try {
+      await $.ajax({ url: '/api/auth/change-password', method: 'POST', contentType: 'application/json', data: JSON.stringify({ old_password: oldPw, new_password: newPw }) });
+      $('#cp-msg').css('color','oklch(0.4 0.14 150)').text('Password changed.');
+    } catch (e) {
+      $('#cp-msg').css('color','var(--p-high)').text(e.responseJSON?.error||'Error');
+    }
+  },
+
+  logout() { AUTH.clear(); location.reload(); },
 
   showNewUserModal() {
     const modal = $(`

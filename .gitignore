@@ -41,5 +41,8 @@ CLAUDE.md
 .anthropic/
 anthropic.json
 
+# Superpowers generated specs
+docs/superpowers/
+
 # Docker
 docker-compose.override.yml
