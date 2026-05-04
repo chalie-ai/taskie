@@ -12,7 +12,8 @@ Search and list tickets. Read-only.
 | `cycle_id` | int | Filter by cycle |
 | `project_id` | int | Filter by project |
 | `status` | str | Filter by status (backlog/todo/progress/review/done/cancel) |
-| `assignee` | str | Filter by assignee |
+| `assignee` | str | Filter by assignee name |
+| `assignee_id` | int | Filter by assignee user ID |
 | `search` | str | Server-side full-text search on name + description |
 
 ### get_ticket
@@ -36,6 +37,7 @@ Create a new ticket. Requires `agent_token`.
 | `project_id` | int | Project to assign to |
 | `cycle_id` | int | Cycle to assign to |
 | `assignee` | str | Who this is assigned to |
+| `assignee_id` | int | Assignee user ID |
 | `due_date` | str | Due date (YYYY-MM-DD) |
 
 ### update_ticket
@@ -51,6 +53,7 @@ Update ticket fields. Requires `agent_token`.
 | `priority` | str | New priority |
 | `status` | str | New status |
 | `assignee` | str | New assignee |
+| `assignee_id` | int | New assignee user ID |
 | `due_date` | str | New due date |
 
 ### delete_ticket

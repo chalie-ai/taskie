@@ -15,6 +15,7 @@ def list_tickets():
         project_id=request.args.get('project_id', type=int),
         status=request.args.get('status'),
         assignee=request.args.get('assignee'),
+        assignee_id=request.args.get('assignee_id', type=int),
         search=request.args.get('search'),
     ))
 
@@ -34,6 +35,8 @@ def create_ticket():
     data = request.get_json()
     if not data or not data.get('name'):
         return jsonify({'error': 'name is required'}), 400
+    if not data.get('cycle_id'):
+        return jsonify({'error': 'cycle_id is required'}), 400
     return jsonify(TicketService.create_ticket(data)), 201
 
 

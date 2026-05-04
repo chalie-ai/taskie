@@ -58,4 +58,4 @@ Set the `TASK_TRACKER_AGENT_TOKEN` env var to your agent token (found in your pr
 
 ### Skill Installation
 
-Copy [skill.md](skill.md) to your Claude Code skills directory for a complete tool reference.
+Copy [skill.md](skill.md) to your coding agent's skills directory for a complete tool reference.

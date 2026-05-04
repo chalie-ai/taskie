@@ -27,6 +27,13 @@ class UserService:
         return [UserService._serialize(u) for u in User.query.order_by(User.name).all()]
 
     @staticmethod
+    def list_users_public():
+        return [{
+            'id': u.id, 'name': u.name, 'surname': u.surname,
+            'role': u.role, 'avatar_color': u.avatar_color,
+        } for u in User.query.order_by(User.name).all()]
+
+    @staticmethod
     def get_user(user_id):
         u = db.session.get(User, user_id)
         if not u:

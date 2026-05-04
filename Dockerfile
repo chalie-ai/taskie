@@ -15,6 +15,4 @@ RUN mkdir -p instance
 
 EXPOSE 8080 5100
 
-ENV DATABASE_URL=sqlite:///instance/task_tracker.db
-
 CMD ["supervisord", "-c", "/app/supervisord.conf"]

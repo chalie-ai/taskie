@@ -19,11 +19,15 @@ class TicketService:
             'description': t.description, 'type': t.type, 'priority': t.priority,
             'status': t.status, 'project_id': t.project_id, 'cycle_id': t.cycle_id,
             'assignee': t.assignee,
+            'assignee_id': t.assignee_id,
             'due_date': str(t.due_date) if t.due_date else None,
             'sort_order': t.sort_order,
             'comment_count': t.comments.count(),
             'created_at': str(t.created_at), 'updated_at': str(t.updated_at),
         }
+        if t.assignee_user:
+            base['assignee_name'] = t.assignee_user.name
+            base['assignee_avatar'] = t.assignee_user.avatar_color
         if t.project:
             base['project_name'] = t.project.name
             base['project_color'] = t.project.color
@@ -45,7 +49,7 @@ class TicketService:
         return base
 
     @staticmethod
-    def list_tickets(cycle_id=None, project_id=None, status=None, assignee=None, search=None):
+    def list_tickets(cycle_id=None, project_id=None, status=None, assignee=None, assignee_id=None, search=None):
         q = Ticket.query
         if cycle_id:
             q = q.filter(Ticket.cycle_id == cycle_id)
@@ -55,6 +59,8 @@ class TicketService:
             q = q.filter(Ticket.status == status)
         if assignee:
             q = q.filter(Ticket.assignee == assignee)
+        if assignee_id:
+            q = q.filter(Ticket.assignee_id == assignee_id)
         if search:
             like = f'%{search}%'
             q = q.filter(
@@ -76,6 +82,8 @@ class TicketService:
 
     @staticmethod
     def create_ticket(data):
+        if not data.get('cycle_id'):
+            return {'error': 'cycle_id is required'}
         due_date = data.get('due_date')
         if isinstance(due_date, str) and due_date:
             due_date = datetime.strptime(due_date, '%Y-%m-%d').date()
@@ -83,6 +91,13 @@ class TicketService:
             due_date = None
         max_order = db.session.query(db.func.max(Ticket.sort_order)).filter(
             Ticket.status == data.get('status', 'backlog')).scalar() or 0
+        assignee_id = data.get('assignee_id')
+        assignee_name = data.get('assignee', '')
+        if assignee_id and not assignee_name:
+            from src.models.user import User
+            u = db.session.get(User, assignee_id)
+            if u:
+                assignee_name = u.name
         t = Ticket(
             display_id=TicketService.ticker(),
             name=data['name'],
@@ -92,7 +107,8 @@ class TicketService:
             status=data.get('status', 'backlog'),
             project_id=data.get('project_id'),
             cycle_id=data.get('cycle_id'),
-            assignee=data.get('assignee'),
+            assignee=assignee_name,
+            assignee_id=assignee_id,
             due_date=due_date,
             sort_order=max_order + 1,
         )
@@ -107,9 +123,14 @@ class TicketService:
             return None
         author = data.get('author_name', 'Dylan')
         allowed = ['name', 'description', 'type', 'priority', 'status',
-                   'project_id', 'cycle_id', 'assignee', 'due_date', 'sort_order']
+                   'project_id', 'cycle_id', 'assignee', 'assignee_id', 'due_date', 'sort_order']
         for field in allowed:
             if field in data:
+                if field == 'assignee_id' and data[field]:
+                    from src.models.user import User
+                    u = db.session.get(User, data[field])
+                    if u:
+                        t.assignee = u.name
                 old_val = getattr(t, field)
                 new_val = data[field]
                 if field == 'due_date' and isinstance(new_val, str):

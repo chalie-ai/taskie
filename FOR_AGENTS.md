@@ -18,7 +18,7 @@ docker run -d -p 8080:8080 -p 5100:5100 task-tracker
 
 ### 2. Connect to the MCP Server
 
-Add this to your MCP config (`.mcp.json` in Claude Code, or equivalent):
+Add this to your MCP config (`.mcp.json` or equivalent):
 
 ```json
 {
@@ -41,11 +41,7 @@ Every write operation requires an `agent_token`. To get yours:
 
 ### 4. Install the Skill (Optional)
 
-Copy [skill.md](skill.md) to your skills directory for a complete tool reference. In Claude Code:
-
-```bash
-cp skill.md ~/.claude/skills/task-tracker.md
-```
+Copy [skill.md](skill.md) to your skills directory for a complete tool reference:
 
 ## How to Use the Tools
 

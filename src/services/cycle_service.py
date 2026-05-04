@@ -1,7 +1,18 @@
+from datetime import date
 from src.models import db, Cycle, Ticket
 
 
 class CycleService:
+
+    @staticmethod
+    def _parse_date(val):
+        if val is None:
+            return None
+        if isinstance(val, date):
+            return val
+        if isinstance(val, str):
+            return date.fromisoformat(val)
+        return None
 
     @staticmethod
     def list_cycles():
@@ -43,8 +54,8 @@ class CycleService:
             title=data['title'],
             description=data.get('description'),
             status=data.get('status', 'pending'),
-            start_date=data.get('start_date'),
-            end_date=data.get('end_date'),
+            start_date=CycleService._parse_date(data.get('start_date')),
+            end_date=CycleService._parse_date(data.get('end_date')),
         )
         db.session.add(c)
         db.session.commit()
@@ -55,9 +66,12 @@ class CycleService:
         c = db.session.get(Cycle, cycle_id)
         if not c:
             return None
-        for field in ['title', 'description', 'status', 'start_date', 'end_date']:
+        for field in ['title', 'description', 'status']:
             if field in data:
                 setattr(c, field, data[field])
+        for field in ['start_date', 'end_date']:
+            if field in data:
+                setattr(c, field, CycleService._parse_date(data[field]))
         db.session.commit()
         return CycleService.get_cycle(c.id)
 

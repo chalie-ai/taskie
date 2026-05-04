@@ -5,15 +5,25 @@ from src.auth.jwt import require_auth
 users_bp = Blueprint('users', __name__)
 
 
+def admin_required():
+    if g.user_role != 'admin':
+        return jsonify({'error': 'Admin only'}), 403
+    return None
+
+
 @users_bp.route('/users', methods=['GET'])
 @require_auth
 def list_users():
-    return jsonify(UserService.list_users())
+    if g.user_role == 'admin':
+        return jsonify(UserService.list_users())
+    return jsonify(UserService.list_users_public())
 
 
 @users_bp.route('/users/<int:user_id>', methods=['GET'])
 @require_auth
 def get_user(user_id):
+    if g.user_role != 'admin' and g.user_id != user_id:
+        return jsonify({'error': 'Forbidden'}), 403
     u = UserService.get_user(user_id)
     if not u:
         return jsonify({'error': 'Not found'}), 404
@@ -23,6 +33,8 @@ def get_user(user_id):
 @users_bp.route('/users', methods=['POST'])
 @require_auth
 def create_user():
+    err = admin_required()
+    if err: return err
     data = request.get_json()
     if not data or not data.get('name'):
         return jsonify({'error': 'name is required'}), 400
@@ -35,6 +47,8 @@ def create_user():
 @users_bp.route('/users/<int:user_id>', methods=['PUT'])
 @require_auth
 def update_user(user_id):
+    err = admin_required()
+    if err: return err
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data'}), 400
@@ -47,6 +61,8 @@ def update_user(user_id):
 @users_bp.route('/users/<int:user_id>', methods=['DELETE'])
 @require_auth
 def delete_user(user_id):
+    err = admin_required()
+    if err: return err
     if not UserService.delete_user(user_id):
         return jsonify({'error': 'Not found'}), 404
     return jsonify({'deleted': True})

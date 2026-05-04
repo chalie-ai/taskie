@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "task-tracker": {
+      "command": "python3",
+      "args": ["mcp_server.py"],
+      "env": {
+        "API_BASE_URL": "http://localhost:8080/api"
+      }
+    }
+  }
+}
