@@ -1,6 +1,13 @@
 from src.models import db, Ticket, TicketRelationship
 
 
+INVERSE_TYPE = {
+    'related': 'related',
+    'blocks': 'blocked_by',
+    'blocked_by': 'blocks',
+}
+
+
 class RelationshipService:
 
     @staticmethod
@@ -8,15 +15,34 @@ class RelationshipService:
         ticket = Ticket.query.get(ticket_id)
         if not ticket:
             return None
-        return [{
-            'id': r.id, 'ticket_id': r.ticket_id,
-            'related_ticket_id': r.related_ticket_id,
-            'relationship_type': r.relationship_type,
-            'related_ticket_display_id': r.related_ticket.display_id,
-            'related_ticket_name': r.related_ticket.name,
-            'related_ticket_status': r.related_ticket.status,
-            'created_at': str(r.created_at),
-        } for r in ticket.relationships]
+        results = []
+        rels = TicketRelationship.query.filter(
+            db.or_(
+                TicketRelationship.ticket_id == ticket_id,
+                TicketRelationship.related_ticket_id == ticket_id,
+            )
+        ).all()
+        for r in rels:
+            is_inverse = (r.related_ticket_id == ticket_id)
+            if is_inverse:
+                display_type = INVERSE_TYPE.get(r.relationship_type, r.relationship_type)
+                other_ticket = r.ticket
+                other_id = r.ticket_id
+            else:
+                display_type = r.relationship_type
+                other_ticket = r.related_ticket
+                other_id = r.related_ticket_id
+            results.append({
+                'id': r.id,
+                'ticket_id': ticket_id,
+                'related_ticket_id': other_id,
+                'relationship_type': display_type,
+                'related_ticket_display_id': other_ticket.display_id,
+                'related_ticket_name': other_ticket.name,
+                'related_ticket_status': other_ticket.status,
+                'created_at': str(r.created_at),
+            })
+        return results
 
     @staticmethod
     def add_relationship(ticket_id, data):
@@ -31,11 +57,23 @@ class RelationshipService:
             return {'error': 'related_ticket_id is invalid'}
         if ticket_id == related_id:
             return {'error': 'Cannot relate a ticket to itself'}
-        existing = TicketRelationship.query.filter_by(
-            ticket_id=ticket_id, related_ticket_id=related_id,
-            relationship_type=rel_type).first()
+
+        existing = TicketRelationship.query.filter(
+            db.or_(
+                db.and_(
+                    TicketRelationship.ticket_id == ticket_id,
+                    TicketRelationship.related_ticket_id == related_id,
+                ),
+                db.and_(
+                    TicketRelationship.ticket_id == related_id,
+                    TicketRelationship.related_ticket_id == ticket_id,
+                    TicketRelationship.relationship_type == INVERSE_TYPE.get(rel_type),
+                ),
+            )
+        ).first()
         if existing:
             return {'error': 'Relationship already exists'}
+
         r = TicketRelationship(
             ticket_id=ticket_id,
             related_ticket_id=related_id,
