@@ -32,7 +32,7 @@ Releases are published to Docker Hub automatically when a `v*.*.*` tag is pushed
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `sqlite:///instance/task_tracker.db` | Database connection string |
+| `DATABASE_URL` | `sqlite:///<basedir>/instance/task_tracker.db` | Database connection string. Relative `sqlite:///` paths are resolved against the project root. |
 | `JWT_SECRET` | `dev-secret-change-in-production` | Secret for signing JWTs |
 | `MASTER_EMAIL` | `admin@tasktracker.local` | Bootstrap admin email |
 | `MASTER_PASSWORD` | `admin` | Bootstrap admin password |

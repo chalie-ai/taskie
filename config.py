@@ -4,9 +4,28 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _normalize_sqlite_url(url, basedir):
+    """Resolve relative sqlite:/// paths against basedir.
+
+    Flask-SQLAlchemy resolves relative SQLite URIs against app.instance_path,
+    which can produce surprising nested paths (e.g. instance/instance/db.sqlite).
+    Anchoring against the project basedir gives the path users expect.
+    """
+    prefix = "sqlite:///"
+    if not url.startswith(prefix):
+        return url
+    rest = url[len(prefix):]
+    if rest.startswith("/"):
+        return url
+    return f"sqlite:///{os.path.abspath(os.path.join(basedir, rest))}"
+
+
 class Config:
     basedir = os.path.abspath(os.path.dirname(__file__))
-    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", f"sqlite:///{basedir}/instance/task_tracker.db")
+    SQLALCHEMY_DATABASE_URI = _normalize_sqlite_url(
+        os.getenv("DATABASE_URL", f"sqlite:///{basedir}/instance/task_tracker.db"),
+        basedir,
+    )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080/api")
     MCP_PORT = int(os.getenv("MCP_PORT", "5100"))

@@ -16,12 +16,9 @@ def create_app():
     register_all(app)
 
     with app.app_context():
-        try:
-            db.create_all()
-            from src.services.user_service import UserService
-            UserService.bootstrap_master(app)
-        except Exception:
-            pass
+        db.create_all()
+        from src.services.user_service import UserService
+        UserService.bootstrap_master(app)
 
     @app.route('/')
     def index():
