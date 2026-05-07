@@ -4,6 +4,10 @@ __pycache__
 instance/
 *.db
 .env
+.env.*
 .git
+.github
+.claude
+.mcp.json
 *.md
 seed.py
