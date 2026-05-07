@@ -13,10 +13,20 @@ Agent (MCP)  ──► MCP Server (:5100) ───┘
 
 ## Quick Start (Docker)
 
+Pull the published image:
+
 ```bash
-docker build -t task-tracker .
-docker run -d -p 8080:8080 -p 5100:5100 --name tracker task-tracker
+docker run -d -p 8080:8080 -p 5100:5100 --name taskie chalieai/taskie:latest
 ```
+
+Or build from source:
+
+```bash
+docker build -t taskie .
+docker run -d -p 8080:8080 -p 5100:5100 --name taskie taskie
+```
+
+Releases are published to Docker Hub automatically when a `v*.*.*` tag is pushed (see `.github/workflows/docker-publish.yml`).
 
 ### Environment Variables
 

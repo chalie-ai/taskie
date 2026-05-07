@@ -13,7 +13,7 @@ Task Tracker is a human + agent task management tool. Humans use a web UI. You u
 The project ships as a Docker container with both the Flask API and MCP server. Your human runs:
 
 ```bash
-docker run -d -p 8080:8080 -p 5100:5100 task-tracker
+docker run -d -p 8080:8080 -p 5100:5100 chalieai/taskie:latest
 ```
 
 ### 2. Connect to the MCP Server
