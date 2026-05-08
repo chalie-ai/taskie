@@ -180,6 +180,34 @@ Pick **one** of:
 
 **Never hard-code the token in source files. Never paste it into chat.** Read it from `os.environ['TASK_TRACKER_AGENT_TOKEN']` (or your runtime's equivalent) and forward it on each call.
 
+### Calling the REST API directly with the agent token
+
+The MCP layer accepts `agent_token` as a tool argument and forwards it as the `X-Agent-Token` header. If you ever bypass MCP and hit the Flask REST API at port `8080` directly, every protected endpoint accepts **either** of these:
+
+| Header | Value | Notes |
+|---|---|---|
+| `Authorization: Bearer <jwt>` | A JWT obtained from `POST /api/auth/token` (email + password login) | Short-lived, refresh via `/api/auth/refresh` |
+| `X-Agent-Token: <uuid>` | The agent token from a user's profile page | No expiry; identifies the human as the actor |
+
+Examples:
+
+```bash
+# Read (no auth needed)
+curl -s http://localhost:8080/api/cycles
+
+# Write with JWT
+curl -s -X POST http://localhost:8080/api/cycles \
+  -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+  -d '{"title":"Cycle X","status":"in_progress","project_ids":[1]}'
+
+# Write with agent token
+curl -s -X POST http://localhost:8080/api/cycles \
+  -H "X-Agent-Token: $TASK_TRACKER_AGENT_TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Cycle X","status":"in_progress","project_ids":[1]}'
+```
+
+The agent token is also accepted as a query string parameter (`?agent_token=<uuid>`) for clients that can't set custom headers, but the header is preferred — query strings end up in access logs.
+
 ---
 
 ## 5. Verify end-to-end
@@ -246,26 +274,34 @@ Pass `agent_token` on every write call. The response is an event-stream block; t
 
 ## 7. Resolving project / cycle names → IDs
 
-The user will say *“create tickets in project Foo, cycle Bar v1.2.3”*. Write tools take **integer IDs**, not names.
+The user will say *“create tickets in project Foo, cycle Bar v1.2.3”*. Write tools take **integer IDs**, not names. Use the dedicated discovery tools:
 
-> Dedicated `list_projects` / `list_cycles` MCP tools are tracked work (TKT-243, TKT-244 in cycle Taskie v0.1.1). Cycle creation/edit via MCP is TKT-245. Until those land, use the workaround below.
-
-**Project ID:**
 ```python
-# list_tickets exposes project_name on every ticket. Pick one and read project_id off get_ticket.
-tickets = call("list_tickets")
-match   = next(t for t in tickets if t["project_name"] == "Foo")
-project_id = call("get_ticket", {"ticket_id": match["id"]})["project_id"]
+# Project ID
+projects = call("list_projects")
+project_id = next(p["id"] for p in projects if p["name"] == "Foo")
+
+# Cycle ID — optionally scope by project so cycle titles resolve unambiguously
+cycles = call("list_cycles", {"project_id": project_id})
+cycle_id = next(c["id"] for c in cycles if c["title"] == "Bar v1.2.3")
 ```
 
-**Cycle ID:**
-```python
-# Same pattern with cycle_id. Requires at least one ticket already in that cycle.
-# If the cycle is empty: ask the human to create one ticket in it via the web UI first,
-# OR ask them for the cycle ID outright.
-```
+`list_projects` accepts an optional `cycle_id` filter (return only projects attached to that cycle). `list_cycles` accepts optional `project_id` and `status` filters.
 
-**New cycle:** can only be created via the web UI right now (JWT-auth API endpoint, not exposed via MCP).
+**Creating a cycle from the agent side:**
+
+```python
+# Plain create — title is the only required field
+cycle = call("create_cycle", {
+    "title": "Taskie v0.2.0",
+    "status": "in_progress",
+    "start_date": "2026-05-08", "end_date": "2026-05-22",
+    "project_ids": [project_id],
+})
+
+# Update — PATCH semantics, only fields you pass are touched
+call("update_cycle", {"cycle_id": cycle["id"], "status": "completed"})
+```
 
 ---
 

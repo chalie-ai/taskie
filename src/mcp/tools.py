@@ -213,6 +213,62 @@ TOOL_DEFS = [
             "properties": {"cycle_id": {"type": "integer", "description": "Filter by cycle"}},
         },
     ),
+    types.Tool(
+        name="list_projects",
+        description="List projects with id, name, description, color, git_repo_url, and ticket counts. Read-only.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "cycle_id": {"type": "integer", "description": "Only return projects attached to this cycle"},
+            },
+        },
+    ),
+    types.Tool(
+        name="list_cycles",
+        description="List cycles with id, title, status, dates, project_ids, and ticket_count. Read-only.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "integer", "description": "Only return cycles attached to this project"},
+                "status": {"type": "string", "description": "Filter by cycle status (pending, in_progress, completed, cancelled)"},
+            },
+        },
+    ),
+    types.Tool(
+        name="create_cycle",
+        description="Create a new cycle. Requires agent_token.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string", "description": "Your agent token (required)"},
+                "title": {"type": "string", "description": "Cycle title (required)"},
+                "description": {"type": "string"},
+                "status": {"type": "string", "description": "pending / in_progress / completed / cancelled"},
+                "start_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "end_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "project_ids": {"type": "array", "items": {"type": "integer"}, "description": "Projects to attach to the cycle"},
+            },
+            "required": ["agent_token", "title"],
+        },
+    ),
+    types.Tool(
+        name="update_cycle",
+        description="Update a cycle. PATCH semantics — only fields provided are changed. Requires agent_token.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string", "description": "Your agent token (required)"},
+                "cycle_id": {"type": "integer", "description": "Cycle ID (required)"},
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "status": {"type": "string"},
+                "start_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "end_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "project_ids": {"type": "array", "items": {"type": "integer"}},
+            },
+            "required": ["agent_token", "cycle_id"],
+        },
+    ),
 ]
 
 
@@ -337,6 +393,38 @@ def call_tool(name: str, arguments: dict) -> str:
             if arguments.get('cycle_id'):
                 params['cycle_id'] = arguments['cycle_id']
             r = client.get(api_url('/stats'), params=params)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "list_projects":
+            params = {}
+            if arguments.get('cycle_id'):
+                params['cycle_id'] = arguments['cycle_id']
+            r = client.get(api_url('/projects'), params=params)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "list_cycles":
+            params = {k: v for k, v in arguments.items()
+                      if k in ('project_id', 'status') and v}
+            r = client.get(api_url('/cycles'), params=params)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "create_cycle":
+            data = {k: v for k, v in arguments.items()
+                    if k in ('title', 'description', 'status', 'start_date', 'end_date', 'project_ids') and v is not None}
+            r = client.post(api_url('/cycles'), json=data)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "update_cycle":
+            cid = arguments['cycle_id']
+            data = {k: v for k, v in arguments.items()
+                    if k in ('title', 'description', 'status', 'start_date', 'end_date', 'project_ids') and v is not None}
+            if not data:
+                return json.dumps({"error": "No fields to update"})
+            r = client.put(api_url(f'/cycles/{cid}'), json=data)
             r.raise_for_status()
             return json.dumps(r.json(), indent=2)
 

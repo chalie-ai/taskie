@@ -7,7 +7,10 @@ cycles_bp = Blueprint('cycles', __name__)
 
 @cycles_bp.route('/cycles', methods=['GET'])
 def list_cycles():
-    return jsonify(CycleService.list_cycles())
+    return jsonify(CycleService.list_cycles(
+        project_id=request.args.get('project_id', type=int),
+        status=request.args.get('status'),
+    ))
 
 
 @cycles_bp.route('/cycles/<int:cycle_id>', methods=['GET'])

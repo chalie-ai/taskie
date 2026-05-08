@@ -1,6 +1,10 @@
 # Task Tracker MCP Tools
 
-Reference for all 16 MCP tools available from the Task Tracker server.
+Reference for the 20 MCP tools available from the Task Tracker server.
+
+## Authentication
+
+Every **write** tool takes an `agent_token` argument (UUID, copied from the user's profile page in the web UI). Read-only tools accept it but don't require it. Read it from the `TASK_TRACKER_AGENT_TOKEN` environment variable rather than hard-coding or pasting it. When calling the underlying REST API directly (port `8080`), pass the same UUID via the `X-Agent-Token` HTTP header (or `Authorization: Bearer <jwt>` for password-derived JWTs).
 
 ## Tool List
 
@@ -156,6 +160,52 @@ Get aggregate stats (inbox count, triage count, my tickets). Read-only.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `cycle_id` | int | Filter stats by cycle |
+
+### list_projects
+List projects. Read-only.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cycle_id` | int | Only return projects attached to this cycle |
+
+Returns each project's `id`, `name`, `description`, `color`, `git_repo_url`, `agent_instructions`, and ticket counts (`ticket_count`, `open_count`, `progress_count`).
+
+### list_cycles
+List cycles. Read-only.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `project_id` | int | Only return cycles attached to this project |
+| `status` | str | Filter by cycle status (`pending`, `in_progress`, `completed`, `cancelled`) |
+
+Returns each cycle's `id`, `title`, `description`, `status`, `start_date`, `end_date`, `project_ids`, `projects` (id/name/color), `ticket_count`, and `done` (count of tickets in `done`/`cancel`).
+
+### create_cycle
+Create a new cycle. Requires `agent_token`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `agent_token` | str | **Required.** Your agent token |
+| `title` | str | **Required.** Cycle title |
+| `description` | str | Markdown description |
+| `status` | str | `pending` / `in_progress` / `completed` / `cancelled` (default: `pending`) |
+| `start_date` | str | YYYY-MM-DD |
+| `end_date` | str | YYYY-MM-DD |
+| `project_ids` | list[int] | Projects to attach to this cycle |
+
+### update_cycle
+Update a cycle. PATCH semantics — only fields you pass are changed. Requires `agent_token`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cycle_id` | int | **Required.** Cycle ID |
+| `agent_token` | str | **Required.** Your agent token |
+| `title` | str | New title |
+| `description` | str | New description |
+| `status` | str | New status |
+| `start_date` | str | New start date |
+| `end_date` | str | New end date |
+| `project_ids` | list[int] | Replace the attached project list (pass `[]` to clear) |
 
 ## Common Workflows
 
