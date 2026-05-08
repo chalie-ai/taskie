@@ -160,7 +160,7 @@ claude mcp list
 
 ## 4. Authenticate
 
-Every **write** tool (`create_ticket`, `update_ticket`, `add_comment`, `submit_pr_link`, `add_relationship`, `delete_*`, `reorder_tickets`) requires an `agent_token`. Read tools (`list_tickets`, `get_ticket`, `list_comments`, `list_pr_links`, `list_relationships`, `get_ticket_history`, `get_stats`) do not.
+Every **write** tool (`create_ticket`, `update_ticket`, `add_comment`, `submit_pr_link`, `add_relationship`, `upload_attachment`, `delete_*`, `reorder_tickets`) requires an `agent_token`. Read tools (`list_tickets`, `get_ticket`, `list_comments`, `list_pr_links`, `list_relationships`, `list_attachments`, `get_ticket_history`, `get_stats`) do not.
 
 ### Get the token
 
