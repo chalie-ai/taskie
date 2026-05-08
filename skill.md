@@ -152,7 +152,7 @@ Remove a ticket relationship. Requires `agent_token`.
 | `agent_token` | str | **Required.** Your agent token |
 
 ### get_ticket_history
-Get the change history for a ticket. Read-only.
+Get the change history for a ticket. Read-only. Returns every audit entry — field changes (status, priority, assignee, etc. — `sort_order` is excluded as drag-reorder noise), `ticket_created`, `comment_added`, `pr_linked`, `pr_removed`, `relationship_added`, `relationship_removed`. Each entry records the actor (`author_name`, `user_id`) resolved from the request's JWT or agent token, plus `old_value`/`new_value` for field changes or a label for events.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
