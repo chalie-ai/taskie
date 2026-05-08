@@ -96,7 +96,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5100/mcp        # 406 
 > ```json
 > {
 >   "mcpServers": {
->     "task-tracker": {
+>     "taskie": {
 >       "type": "http",
 >       "url": "http://<HOST>:5100/mcp"
 >     }
@@ -110,7 +110,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5100/mcp        # 406 
 **Recommended — user scope** (works in every repo, no per-project setup):
 
 ```bash
-claude mcp add task-tracker --scope user --transport http http://localhost:5100/mcp
+claude mcp add taskie --scope user --transport http http://localhost:5100/mcp
 # replace the URL for remote deployments
 ```
 
@@ -121,7 +121,7 @@ Create `.mcp.json` in the repo root **and add it to `.gitignore`** so machine-sp
 ```json
 {
   "mcpServers": {
-    "task-tracker": {
+    "taskie": {
       "type": "http",
       "url": "${TASKIE_MCP_URL:-http://localhost:5100/mcp}"
     }
@@ -145,7 +145,7 @@ Edit `~/.gemini/settings.json` and add the same `mcpServers` block.
 
 ### Other / unknown agent
 
-Find the file your agent reads MCP servers from (almost always called `mcp.json`, `mcp_servers.json`, or part of a settings file). Add the same `task-tracker` block with `"type": "http"`. If your agent can't talk to an HTTP MCP server, drive Taskie directly via the raw HTTP technique in §6.
+Find the file your agent reads MCP servers from (almost always called `mcp.json`, `mcp_servers.json`, or part of a settings file). Add the same `taskie` block with `"type": "http"`. If your agent can't talk to an HTTP MCP server, drive Taskie directly via the raw HTTP technique in §6.
 
 ### Reload the agent
 
@@ -153,7 +153,7 @@ Most agents read MCP config at startup. Restart your agent process after editing
 
 ```bash
 claude mcp list
-# task-tracker: http://localhost:5100/mcp (HTTP) - ✓ Connected
+# taskie: http://localhost:5100/mcp (HTTP) - ✓ Connected
 ```
 
 ---
@@ -393,7 +393,7 @@ Both ticket **descriptions** and **comments** are stored as markdown and rendere
 |---|---|---|
 | `Connection refused` to port 5100 | Server not running | Start the container (§2) |
 | `406 Not Acceptable` to `GET /mcp` | This is *expected* on a bare GET — it confirms MCP is up | Use POST with the right Accept header (§6), or wait for your agent to do it |
-| `mcp__task-tracker__*` tools missing in your session | MCP config wrong, or agent not reloaded | Re-check §3, restart the agent, then `claude mcp list` (or your agent's equivalent) |
+| `mcp__taskie__*` tools missing in your session | MCP config wrong, or agent not reloaded | Re-check §3, restart the agent, then `claude mcp list` (or your agent's equivalent) |
 | Tool call returns `agent_token required` | Token not set or not passed | Set `TASK_TRACKER_AGENT_TOKEN` (§4); confirm with `echo $TASK_TRACKER_AGENT_TOKEN` |
 | Tool call returns `403` / `invalid token` | Token typo, or token belongs to a different Taskie instance | Re-copy from the human's profile page on the *same* server you're calling |
 | `create_ticket` succeeds but ticket is in the wrong project/cycle | Forgot to pass `project_id` / `cycle_id` | Resolve IDs via §7, pass explicitly |

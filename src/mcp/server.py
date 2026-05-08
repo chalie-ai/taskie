@@ -14,9 +14,9 @@ from starlette.types import Receive, Scope, Send
 from src.mcp.tools import TOOL_DEFS, call_tool
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("task-tracker-mcp")
+logger = logging.getLogger("taskie-mcp")
 
-server = Server("task-tracker")
+server = Server("taskie")
 
 
 @server.list_tools()
