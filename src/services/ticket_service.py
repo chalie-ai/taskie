@@ -47,6 +47,8 @@ class TicketService:
             } for p in t.pr_links.all()]
             base['relationships'] = RelationshipService.list_relationships(t.id)
             base['history'] = HistoryService.get_ticket_history(t.id)
+            from src.services.attachment_service import AttachmentService
+            base['attachments'] = AttachmentService.list_attachments(t.id) or []
         return base
 
     @staticmethod

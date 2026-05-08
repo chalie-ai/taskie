@@ -7,6 +7,7 @@ def register_all(app):
     from src.routes.users import users_bp
     from src.routes.stats import stats_bp
     from src.routes.auth import auth_bp
+    from src.routes.attachments import attachments_bp
 
     app.register_blueprint(cycles_bp, url_prefix='/api')
     app.register_blueprint(projects_bp, url_prefix='/api')
@@ -16,3 +17,4 @@ def register_all(app):
     app.register_blueprint(users_bp, url_prefix='/api')
     app.register_blueprint(stats_bp, url_prefix='/api')
     app.register_blueprint(auth_bp, url_prefix='/api')
+    app.register_blueprint(attachments_bp, url_prefix='/api')

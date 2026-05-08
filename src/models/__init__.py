@@ -18,3 +18,4 @@ from src.models.pr_link import PRLink
 from src.models.ticket_relationship import TicketRelationship
 from src.models.ticket_history import TicketHistory
 from src.models.user import User
+from src.models.attachment import Attachment

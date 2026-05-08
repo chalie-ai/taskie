@@ -270,6 +270,46 @@ TOOL_DEFS = [
             "required": ["agent_token", "cycle_id"],
         },
     ),
+    types.Tool(
+        name="list_attachments",
+        description="List attachments on a ticket. Returns filename, size, uploader, created_at, and a download URL.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "ticket_id": {"type": "integer", "description": "Ticket ID"},
+            },
+            "required": ["ticket_id"],
+        },
+    ),
+    types.Tool(
+        name="upload_attachment",
+        description=("Upload a file attachment to a ticket. Provide the file as base64 in `file_base64` "
+                     "(plus `filename` and optional `content_type`). Max size 25MB. Requires agent_token."),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string", "description": "Your agent token (required)"},
+                "ticket_id": {"type": "integer", "description": "Ticket ID (required)"},
+                "filename": {"type": "string", "description": "Original filename (required)"},
+                "file_base64": {"type": "string", "description": "Base64-encoded file contents (required)"},
+                "content_type": {"type": "string", "description": "MIME type (optional)"},
+            },
+            "required": ["agent_token", "ticket_id", "filename", "file_base64"],
+        },
+    ),
+    types.Tool(
+        name="delete_attachment",
+        description="Delete an attachment from a ticket. Requires agent_token.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string", "description": "Your agent token (required)"},
+                "ticket_id": {"type": "integer", "description": "Ticket ID (required)"},
+                "attachment_id": {"type": "integer", "description": "Attachment ID (required)"},
+            },
+            "required": ["agent_token", "ticket_id", "attachment_id"],
+        },
+    ),
 ]
 
 
@@ -430,5 +470,35 @@ def call_tool(name: str, arguments: dict) -> str:
             r = client.put(api_url(f'/cycles/{cid}'), json=data)
             r.raise_for_status()
             return json.dumps(r.json(), indent=2)
+
+        elif name == "list_attachments":
+            r = client.get(api_url(f'/tickets/{tid}/attachments'))
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "upload_attachment":
+            import base64
+            try:
+                data_bytes = base64.b64decode(arguments['file_base64'], validate=True)
+            except Exception as e:
+                return json.dumps({"error": f"Invalid base64: {e}"})
+            files = {
+                'file': (
+                    arguments['filename'],
+                    data_bytes,
+                    arguments.get('content_type') or 'application/octet-stream',
+                ),
+            }
+            r = client.post(api_url(f'/tickets/{tid}/attachments'), files=files)
+            if r.status_code >= 400:
+                try: return json.dumps(r.json())
+                except Exception: r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "delete_attachment":
+            aid = arguments['attachment_id']
+            r = client.delete(api_url(f'/tickets/{tid}/attachments/{aid}'))
+            r.raise_for_status()
+            return json.dumps({"deleted": True})
 
         return json.dumps({"error": f"Unknown tool: {name}"})

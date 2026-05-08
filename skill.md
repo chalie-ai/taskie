@@ -1,6 +1,6 @@
 # Task Tracker MCP Tools
 
-Reference for the 20 MCP tools available from the Task Tracker server.
+Reference for the 23 MCP tools available from the Task Tracker server.
 
 ## Markdown
 
@@ -210,6 +210,33 @@ Update a cycle. PATCH semantics — only fields you pass are changed. Requires `
 | `start_date` | str | New start date |
 | `end_date` | str | New end date |
 | `project_ids` | list[int] | Replace the attached project list (pass `[]` to clear) |
+
+### list_attachments
+List attachments on a ticket. Read-only. Returns id, filename, size_bytes, content_type, uploader_name, created_at, and a `download_url` you can GET to fetch the file.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ticket_id` | int | **Required.** Ticket ID |
+
+### upload_attachment
+Upload a file to a ticket. Requires `agent_token`. The file must be base64-encoded and passed in `file_base64`. Max 25MB. Logs an `attachment_added` activity entry.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ticket_id` | int | **Required.** Ticket ID |
+| `agent_token` | str | **Required.** Your agent token |
+| `filename` | str | **Required.** Original filename (used for display + download) |
+| `file_base64` | str | **Required.** Base64-encoded file contents |
+| `content_type` | str | MIME type (defaults to `application/octet-stream`) |
+
+### delete_attachment
+Remove an attachment. Requires `agent_token`. Logs an `attachment_removed` activity entry. The on-disk file is removed too.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ticket_id` | int | **Required.** Ticket ID |
+| `attachment_id` | int | **Required.** Attachment ID |
+| `agent_token` | str | **Required.** Your agent token |
 
 ## Common Workflows
 

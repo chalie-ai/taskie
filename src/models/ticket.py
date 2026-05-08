@@ -24,4 +24,6 @@ class Ticket(db.Model):
     comments = db.relationship('Comment', backref='ticket', lazy='dynamic',
                                order_by='Comment.created_at', cascade='all, delete-orphan')
     pr_links = db.relationship('PRLink', backref='ticket', lazy='dynamic', cascade='all, delete-orphan')
+    attachments = db.relationship('Attachment', backref='ticket', lazy='dynamic',
+                                  order_by='Attachment.created_at', cascade='all, delete-orphan')
     assignee_user = db.relationship('User', backref='assigned_tickets', foreign_keys=[assignee_id])

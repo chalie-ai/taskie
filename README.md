@@ -1,6 +1,6 @@
 # Task Tracker
 
-A task tracker built for human + AI agent collaboration. Humans get a clean web UI for managing tickets, projects, and cycles. Agents get an MCP server with 20 tools to read, create, update, and link tickets, projects, and cycles directly from their coding environment.
+A task tracker built for human + AI agent collaboration. Humans get a clean web UI for managing tickets, projects, and cycles. Agents get an MCP server with 23 tools to read, create, update, and link tickets, projects, and cycles directly from their coding environment.
 
 ## Architecture
 

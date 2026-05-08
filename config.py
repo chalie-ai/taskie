@@ -34,3 +34,6 @@ class Config:
     JWT_REFRESH_EXPIRY = int(os.getenv("JWT_REFRESH_EXPIRY", "2592000"))
     MASTER_EMAIL = os.getenv("MASTER_EMAIL", "admin@tasktracker.local")
     MASTER_PASSWORD = os.getenv("MASTER_PASSWORD", "admin")
+    # Cap upload body size to ~25MB. Werkzeug will return 413 automatically for
+    # oversize multipart payloads, before they hit our handler.
+    MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(26 * 1024 * 1024)))

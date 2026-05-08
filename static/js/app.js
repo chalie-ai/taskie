@@ -489,6 +489,16 @@ const App = {
 
     const activityFeed = this.activityFeedHTML(t);
 
+    const attachments = t.attachments || [];
+    const attachmentsHTML = attachments.map(a => `
+      <div class="attachment-item">
+        <span class="attachment-icon">${I.attach}</span>
+        <a class="attachment-name" href="${a.download_url}" target="_blank" rel="noopener">${this.esc(a.filename)}</a>
+        <span class="attachment-meta">${this.fmtBytes(a.size_bytes)} · ${this.esc(a.uploader_name||'Unknown')} · ${this.relDate(a.created_at)}</span>
+        <button class="rel-remove" onclick="App.deleteAttachment(${t.id},${a.id})" title="Remove">${I.close}</button>
+      </div>
+    `).join('');
+
     const rels = t.relationships || [];
     const REL_TYPE_LABELS = { related:'Related to', blocks:'Blocks', blocked_by:'Blocked by' };
     const relsHTML = rels.map(r => `
@@ -559,6 +569,16 @@ const App = {
             <div id="panel-add-rel" style="display:none"></div>
           </div>
           <div class="panel-section">
+            <div class="panel-section-title rel-section-head">
+              <span>Attachments · ${attachments.length}</span>
+              <button class="btn btn-ghost" onclick="App.openAttachmentPicker(${t.id})">+ Add</button>
+            </div>
+            <div id="panel-attachments-drop" class="attachment-drop" data-ticket-id="${t.id}">
+              ${attachmentsHTML || '<div class="rel-empty">No attachments yet — drop files here or click + Add.</div>'}
+            </div>
+            <input type="file" id="panel-attachment-input" multiple style="display:none" onchange="App.uploadAttachments(${t.id}, this.files)"/>
+          </div>
+          <div class="panel-section">
             <div class="panel-section-title">Activity · ${(t.comments||[]).length + (t.history||[]).length}</div>
             <div class="comments">${activityFeed || '<div style="color:var(--text-faint);font-size:12.5px;padding:8px 0">No activity yet.</div>'}</div>
             <div class="composer">
@@ -585,6 +605,73 @@ const App = {
       const val = $(this).val();
       App.patchTicket(t.id, field, val);
     });
+    // Drag-drop attachments onto the panel section.
+    const $drop = $('#panel-attachments-drop');
+    $drop.on('dragover', function(e) { e.preventDefault(); e.stopPropagation(); $(this).addClass('drag-over'); });
+    $drop.on('dragleave dragend drop', function(e) { $(this).removeClass('drag-over'); });
+    $drop.on('drop', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      const files = e.originalEvent.dataTransfer && e.originalEvent.dataTransfer.files;
+      if (files && files.length) App.uploadAttachments(t.id, files);
+    });
+  },
+
+  openAttachmentPicker(id) {
+    $('#panel-attachment-input').trigger('click');
+  },
+
+  async uploadAttachments(ticketId, fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    for (const f of files) {
+      if (f.size > 25 * 1024 * 1024) {
+        alert(`${f.name} is larger than 25MB and was skipped.`);
+        continue;
+      }
+      const fd = new FormData();
+      fd.append('file', f);
+      try {
+        await $.ajax({
+          url: `/api/tickets/${ticketId}/attachments`,
+          method: 'POST',
+          data: fd,
+          processData: false,
+          contentType: false,
+        });
+      } catch (e) {
+        alert(`Failed to upload ${f.name}: ${e.responseJSON?.error || e.statusText}`);
+      }
+    }
+    await this.refreshTicketDetail(ticketId);
+  },
+
+  async deleteAttachment(ticketId, attachmentId) {
+    if (!confirm('Remove this attachment? This cannot be undone.')) return;
+    try {
+      await $.ajax({ url: `/api/tickets/${ticketId}/attachments/${attachmentId}`, method: 'DELETE' });
+      await this.refreshTicketDetail(ticketId);
+    } catch (e) {
+      alert('Failed to remove attachment: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  async refreshTicketDetail(ticketId) {
+    try {
+      const t = await $.ajax({ url: `/api/tickets/${ticketId}`, method: 'GET' });
+      this.ticketDetail = t;
+      const idx = this.tickets.findIndex(x => x.id == ticketId);
+      if (idx >= 0) this.tickets[idx] = t;
+      $('.panel, .panel-overlay').remove();
+      this.showPanel(t);
+    } catch (e) { console.error(e); }
+  },
+
+  fmtBytes(n) {
+    if (!n && n !== 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0; let v = n;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
   },
 
   closePanel() {
@@ -1537,6 +1624,8 @@ const App = {
     if (f === 'pr_removed') return `removed PR link — ${this.esc(oldV || '')}`;
     if (f === 'relationship_added') return `added relationship — ${this.esc(newV || '')}`;
     if (f === 'relationship_removed') return `removed relationship — ${this.esc(oldV || '')}`;
+    if (f === 'attachment_added') return `attached <code>${this.esc(newV || '')}</code>`;
+    if (f === 'attachment_removed') return `removed attachment <code>${this.esc(oldV || '')}</code>`;
     const label = FIELD_LABELS[f] || f;
     if (oldV && newV) return `changed ${label} from ${fmt(oldV)} to ${fmt(newV)}`;
     if (newV) return `set ${label} to ${fmt(newV)}`;
