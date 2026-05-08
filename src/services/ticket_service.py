@@ -116,6 +116,8 @@ class TicketService:
             sort_order=max_order + 1,
         )
         db.session.add(t)
+        db.session.flush()
+        HistoryService.log(t.id, 'ticket_created', None, t.display_id)
         db.session.commit()
         return TicketService.get_ticket(t.id)
 
@@ -128,9 +130,10 @@ class TicketService:
         # an old client or API caller could still send it (or empty string).
         if 'status' in data and data['status'] in (None, '', '-'):
             data['status'] = 'backlog'
-        author = data.get('author_name', 'Dylan')
+        # Skip sort_order in the activity log — drag-reorder is high-volume noise.
         allowed = ['name', 'description', 'type', 'priority', 'status',
                    'project_id', 'cycle_id', 'assignee', 'assignee_id', 'due_date', 'sort_order']
+        loggable = {f for f in allowed if f != 'sort_order'}
         for field in allowed:
             if field in data:
                 if field == 'assignee_id' and data[field]:
@@ -147,13 +150,8 @@ class TicketService:
                         new_val = None
                 if str(old_val) != str(new_val):
                     setattr(t, field, new_val)
-                    h = TicketHistory(
-                        ticket_id=ticket_id, author_name=author,
-                        field_name=field,
-                        old_value=str(old_val) if old_val is not None else None,
-                        new_value=str(new_val),
-                    )
-                    db.session.add(h)
+                    if field in loggable:
+                        HistoryService.log(ticket_id, field, old_val, new_val)
         db.session.commit()
         return TicketService.get_ticket(ticket_id)
 

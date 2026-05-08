@@ -28,6 +28,15 @@ def decode_token(token):
         return {'error': 'invalid_token'}
 
 
+def _attach_user_name(user_id):
+    if not user_id:
+        return None
+    from src.models.user import User
+    from src.models import db
+    u = db.session.get(User, int(user_id))
+    return u.name if u else None
+
+
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -39,6 +48,7 @@ def require_auth(f):
                 if payload.get('type') == 'access':
                     g.user_id = int(payload['sub'])
                     g.user_role = payload['role']
+                    g.user_name = _attach_user_name(g.user_id)
                     return f(*args, **kwargs)
 
         # Try agent token
@@ -51,6 +61,7 @@ def require_auth(f):
             if user:
                 g.user_id = user.id
                 g.user_role = user.role
+                g.user_name = user.name
                 return f(*args, **kwargs)
 
         return jsonify({'error': 'Missing or invalid Authorization header or agent token'}), 401
@@ -62,11 +73,13 @@ def optional_auth(f):
     def decorated(*args, **kwargs):
         g.user_id = None
         g.user_role = None
+        g.user_name = None
         auth = request.headers.get('Authorization', '')
         if auth.startswith('Bearer '):
             payload = decode_token(auth[7:])
             if not isinstance(payload, dict) or 'error' not in payload:
                 g.user_id = payload.get('sub')
                 g.user_role = payload.get('role')
+                g.user_name = _attach_user_name(g.user_id)
         return f(*args, **kwargs)
     return decorated

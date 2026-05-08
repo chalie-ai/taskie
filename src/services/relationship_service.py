@@ -1,4 +1,5 @@
 from src.models import db, Ticket, TicketRelationship
+from src.services.history_service import HistoryService
 
 
 INVERSE_TYPE = {
@@ -80,6 +81,12 @@ class RelationshipService:
             relationship_type=rel_type,
         )
         db.session.add(r)
+        related = Ticket.query.get(related_id)
+        label = f"{rel_type} {related.display_id}" if related else rel_type
+        HistoryService.log(ticket_id, 'relationship_added', None, label)
+        if related:
+            HistoryService.log(related_id, 'relationship_added',
+                               None, f"{INVERSE_TYPE.get(rel_type, rel_type)} {ticket.display_id}")
         db.session.commit()
         return RelationshipService.list_relationships(ticket_id)
 
@@ -88,6 +95,14 @@ class RelationshipService:
         r = TicketRelationship.query.get(relationship_id)
         if not r:
             return False
+        src_t = Ticket.query.get(r.ticket_id)
+        dst_t = Ticket.query.get(r.related_ticket_id)
+        label = f"{r.relationship_type} {dst_t.display_id if dst_t else r.related_ticket_id}"
+        HistoryService.log(r.ticket_id, 'relationship_removed', label, None)
+        if dst_t:
+            HistoryService.log(r.related_ticket_id, 'relationship_removed',
+                               f"{INVERSE_TYPE.get(r.relationship_type, r.relationship_type)} {src_t.display_id if src_t else r.ticket_id}",
+                               None)
         db.session.delete(r)
         db.session.commit()
         return True

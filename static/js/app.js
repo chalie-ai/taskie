@@ -487,21 +487,7 @@ const App = {
       this.cycles.map(c => `<option value="${c.id}" ${t.cycle_id===c.id?'selected':''}>${c.title}</option>`).join('');
     const userOpts = this.users.map(u => `<option value="${u.id}" ${t.assignee_id===u.id?'selected':''}>${this.esc(u.name)}</option>`).join('');
 
-    const commentsHTML = (t.comments||[]).map(c => {
-      const isAgent = c.author_type === 'agent';
-      const initials = c.author_name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-      return `<div class="comment">
-        <div class="comment-avatar ${isAgent?'agent':''}" style="${!isAgent?'background:var(--text-muted)':''}">${isAgent ? I.sparkle : initials}</div>
-        <div class="comment-body">
-          <div class="comment-head">
-            <span class="comment-author">${this.esc(c.author_name)}${isAgent?'<span class="agent-tag">agent</span>':''}</span>
-            <span class="comment-time">${this.relDate(c.created_at)}</span>
-          </div>
-          <div class="comment-text">${this.md(c.body)}</div>
-          ${c.pr_link ? `<div class="comment-pr">${I.pr} <span>${this.esc(c.pr_link.title||'')}</span><span class="pr-status ${c.pr_link.status}">${c.pr_link.status}</span></div>` : ''}
-        </div>
-      </div>`;
-    }).join('');
+    const activityFeed = this.activityFeedHTML(t);
 
     const rels = t.relationships || [];
     const REL_TYPE_LABELS = { related:'Related to', blocks:'Blocks', blocked_by:'Blocked by' };
@@ -573,8 +559,8 @@ const App = {
             <div id="panel-add-rel" style="display:none"></div>
           </div>
           <div class="panel-section">
-            <div class="panel-section-title">Activity · ${(t.comments||[]).length}</div>
-            <div class="comments">${commentsHTML || '<div style="color:var(--text-faint);font-size:12.5px;padding:8px 0">No activity yet.</div>'}</div>
+            <div class="panel-section-title">Activity · ${(t.comments||[]).length + (t.history||[]).length}</div>
+            <div class="comments">${activityFeed || '<div style="color:var(--text-faint);font-size:12.5px;padding:8px 0">No activity yet.</div>'}</div>
             <div class="composer">
               <textarea id="comment-input" placeholder="Leave a comment…  ⌘↵ to send" onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();App.submitComment(${t.id})}"></textarea>
               <div class="composer-actions">
@@ -1482,9 +1468,102 @@ const App = {
     } catch (e) { console.error(e); alert('Error saving description: ' + (e.responseJSON?.error || e.statusText)); }
   },
 
+  activityFeedHTML(t) {
+    const comments = (t.comments || []).map(c => ({
+      kind: 'comment',
+      created_at: c.created_at,
+      data: c,
+    }));
+    const history = (t.history || []).map(h => ({
+      kind: 'history',
+      created_at: h.created_at,
+      data: h,
+    }));
+    const merged = comments.concat(history).sort((a, b) => {
+      const ta = new Date(a.created_at).getTime() || 0;
+      const tb = new Date(b.created_at).getTime() || 0;
+      return ta - tb;
+    });
+    return merged.map(item => item.kind === 'comment'
+      ? this.commentHTML(item.data)
+      : this.historyHTML(item.data)
+    ).join('');
+  },
+
+  commentHTML(c) {
+    const isAgent = c.author_type === 'agent';
+    const name = c.author_name || 'Unknown';
+    const initials = name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+    return `<div class="comment">
+      <div class="comment-avatar ${isAgent?'agent':''}" style="${!isAgent?'background:var(--text-muted)':''}">${isAgent ? I.sparkle : initials}</div>
+      <div class="comment-body">
+        <div class="comment-head">
+          <span class="comment-author">${this.esc(name)}${isAgent?'<span class="agent-tag">agent</span>':''}</span>
+          <span class="comment-time">${this.relDateTime(c.created_at)}</span>
+        </div>
+        <div class="comment-text">${this.md(c.body || '')}</div>
+        ${c.pr_link ? `<div class="comment-pr">${I.pr} <span>${this.esc(c.pr_link.title||c.pr_link.url||'')}</span><span class="pr-status ${c.pr_link.status}">${c.pr_link.status}</span></div>` : ''}
+      </div>
+    </div>`;
+  },
+
+  historyHTML(h) {
+    const name = h.author_name || 'System';
+    const initials = name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+    const summary = this.historySummary(h);
+    return `<div class="activity-event">
+      <div class="activity-avatar">${initials}</div>
+      <div class="activity-line">
+        <span class="activity-author">${this.esc(name)}</span>
+        <span class="activity-text">${summary}</span>
+        <span class="activity-time">${this.relDateTime(h.created_at)}</span>
+      </div>
+    </div>`;
+  },
+
+  historySummary(h) {
+    const f = h.field_name;
+    const oldV = h.old_value;
+    const newV = h.new_value;
+    const fmt = v => v === null || v === undefined || v === '' ? '<em>nothing</em>' : `<code>${this.esc(String(v))}</code>`;
+    const FIELD_LABELS = {
+      name: 'name', description: 'description', type: 'type', priority: 'priority',
+      status: 'status', project_id: 'project', cycle_id: 'cycle',
+      assignee: 'assignee', assignee_id: 'assignee', due_date: 'due date',
+    };
+    if (f === 'ticket_created') return `created this ticket`;
+    if (f === 'comment_added') return `commented`;
+    if (f === 'pr_linked') return `linked a PR — ${this.esc(newV || '')}`;
+    if (f === 'pr_removed') return `removed PR link — ${this.esc(oldV || '')}`;
+    if (f === 'relationship_added') return `added relationship — ${this.esc(newV || '')}`;
+    if (f === 'relationship_removed') return `removed relationship — ${this.esc(oldV || '')}`;
+    const label = FIELD_LABELS[f] || f;
+    if (oldV && newV) return `changed ${label} from ${fmt(oldV)} to ${fmt(newV)}`;
+    if (newV) return `set ${label} to ${fmt(newV)}`;
+    if (oldV) return `cleared ${label} (was ${fmt(oldV)})`;
+    return `updated ${label}`;
+  },
+
   relDate(d) {
     if (!d) return '';
     try { return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch(e) { return d; }
+  },
+
+  relDateTime(d) {
+    if (!d) return '';
+    try {
+      const dt = new Date(d);
+      const now = new Date();
+      const diffMs = now - dt;
+      const diffMin = Math.floor(diffMs / 60000);
+      if (diffMin < 1) return 'just now';
+      if (diffMin < 60) return `${diffMin}m ago`;
+      const diffH = Math.floor(diffMin / 60);
+      if (diffH < 24) return `${diffH}h ago`;
+      const diffD = Math.floor(diffH / 24);
+      if (diffD < 7) return `${diffD}d ago`;
+      return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    } catch(e) { return d; }
   },
 };
 

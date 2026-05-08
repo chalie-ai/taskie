@@ -1,4 +1,6 @@
+from flask import g, has_request_context
 from src.models import db, Ticket, Comment, PRLink
+from src.services.history_service import HistoryService
 
 
 class CommentService:
@@ -22,11 +24,17 @@ class CommentService:
         ticket = Ticket.query.get(ticket_id)
         if not ticket:
             return None
+        author_name = data.get('author_name')
+        author_type = data.get('author_type', 'human')
+        if not author_name and has_request_context():
+            author_name = getattr(g, 'user_name', None)
+        if not author_name:
+            author_name = 'Anonymous'
         c = Comment(
             ticket_id=ticket_id,
             body=data['body'],
-            author_type=data.get('author_type', 'human'),
-            author_name=data.get('author_name', 'Dylan'),
+            author_type=author_type,
+            author_name=author_name,
         )
         db.session.add(c)
         db.session.flush()
@@ -40,6 +48,15 @@ class CommentService:
                 status=data.get('pr_status', 'open'),
             )
             db.session.add(pr)
+            HistoryService.log(ticket_id, 'pr_linked', None,
+                               data.get('pr_title') or data['pr_url'],
+                               author_name=author_name)
+
+        # First 80 chars are enough for the activity preview; the comment
+        # itself remains the source of truth.
+        preview = (c.body or '').strip().splitlines()[0][:80] if c.body else ''
+        HistoryService.log(ticket_id, 'comment_added', None, preview,
+                           author_name=author_name)
 
         db.session.commit()
         return CommentService.list_comments(ticket_id)
