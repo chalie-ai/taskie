@@ -12,6 +12,7 @@ const I = {
   chevDown: '<svg class="svg-icon" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>',
   chevRight:'<svg class="svg-icon" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 4l4 4-4 4"/></svg>',
   attach:   '<svg class="svg-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 5L6.5 9.5a2 2 0 102.8 2.8l5-5a3.5 3.5 0 10-5-5L4.5 7.5"/></svg>',
+  link:     '<svg class="svg-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 9a3 3 0 004.24 0l2.12-2.12a3 3 0 10-4.24-4.24L8 3.76"/><path d="M9 7a3 3 0 00-4.24 0L2.64 9.12a3 3 0 104.24 4.24L8 12.24"/></svg>',
   pencil:   '<svg class="svg-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg>',
   folder:   '<svg class="svg-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4.5a1 1 0 011-1h3.5l1 1.5H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1v-7.5z"/></svg>',
   pr:       '<svg class="svg-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><path d="M4 5.5v5"/><path d="M5.5 4H10a2 2 0 012 2v5"/></svg>',
@@ -521,7 +522,8 @@ const App = {
             <span class="sb-dot" style="background:${proj?.color};width:7px;height:7px;border-radius:50%"></span>${proj?.name}
           </span>
           <div class="panel-head-actions">
-            <button class="btn-icon" title="Copy link" onclick="App.copyTicketLink(${t.id})">${I.attach}</button>
+            <button class="btn-icon" title="Attach file" onclick="App.openAttachmentPicker(${t.id})">${I.attach}</button>
+            <button class="btn-icon" title="Copy link" onclick="App.copyTicketLink(${t.id})">${I.link}</button>
             <button class="btn-icon" title="Delete ticket" onclick="App.deleteTicket(${t.id}, '${this.esc(t.display_id)}')" style="color:var(--p-high)">${I.trash}</button>
             <button class="btn-icon" onclick="App.closePanel()" title="Close (Esc)">${I.close}</button>
           </div>
