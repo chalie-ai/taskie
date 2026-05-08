@@ -171,8 +171,8 @@ const App = {
     if (c) {
       const pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
       $('#sb-cycle-card').html(`
-        <div class="sb-cycle-label"><span>Active cycle</span></div>
-        <div class="sb-cycle-name">${c.title} · ${c.description}</div>
+        <div class="sb-cycle-label"><span>Active cycle</span><button class="sb-cycle-card-edit" title="Edit cycle" onclick="event.stopPropagation();App.editCycle(${c.id})">${I.pencil}</button></div>
+        <div class="sb-cycle-name">${this.esc(c.title)}${c.description ? ' · ' + this.esc(c.description) : ''}</div>
         <div class="sb-cycle-progress"><div class="sb-cycle-progress-fill" style="width:${pct}%"></div></div>
         <div class="sb-cycle-stats"><span>${c.done} of ${c.total} done</span><span>${pct}%</span></div>
       `);
@@ -218,11 +218,14 @@ const App = {
     // Cycle list
     $('#sb-cycle-list').html(this.cycles.map(c => {
       const act = (this.view === 'cycle' && this.activeCycleId === c.id) ? ' active' : '';
-      const nowBadge = c.active ? '<span style="margin-left:auto;font-size:10px;color:var(--accent-text);background:var(--accent-soft);padding:1px 5px;border-radius:3px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase">now</span>' : '';
-      return `<button class="sb-item${act}" onclick="App.setCycle(${c.id})">
-        <span class="sb-icon">${I.sparkle}</span><span class="sb-label">${c.title}</span>${nowBadge}
-      </button>`;
-    }));
+      const nowBadge = c.active ? '<span class="sb-cycle-row-now">now</span>' : '';
+      return `<div class="sb-cycle-row${act}">
+        <button class="sb-item${act}" onclick="App.setCycle(${c.id})" style="padding-right:28px">
+          <span class="sb-icon">${I.sparkle}</span><span class="sb-label">${this.esc(c.title)}</span>${nowBadge}
+        </button>
+        <button class="sb-cycle-edit" title="Edit cycle" onclick="event.stopPropagation();App.editCycle(${c.id})">${I.pencil}</button>
+      </div>`;
+    }).join(''));
   },
 
   renderCrumbs() {
@@ -770,6 +773,85 @@ const App = {
       $('#new-cycle-overlay').remove();
       this.render();
     } catch (e) { console.error(e); alert('Error creating cycle: ' + (e.responseJSON?.error || e.statusText)); }
+  },
+
+  editCycle(id) {
+    const c = this.cycles.find(c => c.id == id);
+    if (!c) return;
+    const pids = new Set((c.project_ids || (c.projects || []).map(p => p.id) || []).map(Number));
+    const projOpts = this.projects.map(p => `
+      <label style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12.5px" onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background=''">
+        <input type="checkbox" class="ec-pid" value="${p.id}" ${pids.has(p.id) ? 'checked' : ''}>
+        <span class="sb-dot" style="background:${p.color};display:inline-block;width:8px;height:8px;border-radius:50%"></span>
+        <span>${this.esc(p.name)}</span>
+      </label>`).join('');
+    const modal = $(`
+      <div class="cmd-overlay" style="z-index:1500" id="edit-cycle-overlay" onclick="if(event.target===this) $('#edit-cycle-overlay').remove()">
+        <div class="cmd" style="padding:20px">
+          <h3 style="font-weight:600;margin-bottom:16px">Edit Cycle — ${this.esc(c.title)}</h3>
+          <div class="mb-3"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Title</label><input class="form-control" id="ec-title" value="${this.esc(c.title)}" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px"></div>
+          <div class="mb-3"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Description</label><textarea class="form-control" id="ec-desc" rows="2" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px">${this.esc(c.description || '')}</textarea></div>
+          <div style="display:flex;gap:10px;margin-bottom:14px">
+            <div style="flex:1"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Status</label><select class="form-select" id="ec-status" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius)">
+              <option value="pending"${c.status==='pending'?' selected':''}>Pending</option>
+              <option value="in_progress"${c.status==='in_progress'?' selected':''}>In Progress</option>
+              <option value="completed"${c.status==='completed'?' selected':''}>Completed</option>
+              <option value="cancelled"${c.status==='cancelled'?' selected':''}>Cancelled</option>
+            </select></div>
+          </div>
+          <div style="display:flex;gap:10px;margin-bottom:14px">
+            <div style="flex:1"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Start date</label><input type="date" class="form-control" id="ec-start" value="${c.start_date || ''}" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px"></div>
+            <div style="flex:1"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">End date</label><input type="date" class="form-control" id="ec-end" value="${c.end_date || ''}" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px"></div>
+          </div>
+          <div class="mb-3"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Projects</label>
+            <div style="border:1px solid var(--border);border-radius:var(--radius);padding:4px;max-height:160px;overflow-y:auto">${projOpts || '<div style="padding:6px 8px;color:var(--text-muted);font-size:12px">No projects yet</div>'}</div>
+          </div>
+          <div style="display:flex;justify-content:space-between;gap:8px">
+            <button class="btn btn-ghost" style="color:var(--p-high)" onclick="App.deleteCycle(${id})">Delete</button>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary" onclick="$('#edit-cycle-overlay').remove()">Cancel</button>
+              <button class="btn btn-primary" onclick="App.submitEditCycle(${id})">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+    $('body').append(modal);
+    $('#ec-title').focus();
+  },
+
+  async submitEditCycle(id) {
+    const title = $('#ec-title').val().trim();
+    if (!title) { alert('Title is required'); return; }
+    const project_ids = $('#edit-cycle-overlay .ec-pid:checked').map(function(){ return parseInt(this.value); }).get();
+    const data = {
+      title,
+      description: $('#ec-desc').val().trim(),
+      status: $('#ec-status').val(),
+      start_date: $('#ec-start').val() || null,
+      end_date: $('#ec-end').val() || null,
+      project_ids,
+    };
+    try {
+      const updated = await $.ajax({ url: `/api/cycles/${id}`, method: 'PUT', contentType: 'application/json', data: JSON.stringify(data) });
+      const idx = this.cycles.findIndex(c => c.id == id);
+      if (idx >= 0) this.cycles[idx] = updated;
+      $('#edit-cycle-overlay').remove();
+      this.render();
+    } catch (e) { console.error(e); alert('Error updating cycle: ' + (e.responseJSON?.error || e.statusText)); }
+  },
+
+  async deleteCycle(id) {
+    const c = this.cycles.find(c => c.id == id);
+    if (!c) return;
+    if (!confirm(`Delete cycle "${c.title}"? Tickets in this cycle will not be deleted but will lose their cycle assignment.`)) return;
+    try {
+      await $.ajax({ url: `/api/cycles/${id}`, method: 'DELETE' });
+      this.cycles = this.cycles.filter(c => c.id != id);
+      if (this.activeCycleId == id) this.activeCycleId = this.cycles[0]?.id || null;
+      $('#edit-cycle-overlay').remove();
+      this.render();
+    } catch (e) { console.error(e); alert('Error deleting cycle: ' + (e.responseJSON?.error || e.statusText)); }
   },
 
   editProject(id) {
