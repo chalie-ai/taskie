@@ -2,6 +2,10 @@
 
 Reference for the 20 MCP tools available from the Task Tracker server.
 
+## Markdown
+
+Ticket **descriptions** and **comments** render as markdown in the web UI (marked + DOMPurify). Use headings, lists, fenced code blocks, links, tables, blockquotes — they render cleanly. HTML is sanitised. Always write descriptions/comments as markdown rather than plain text concatenated with `\n` so the human reader sees structure.
+
 ## Authentication
 
 Every **write** tool takes an `agent_token` argument (UUID, copied from the user's profile page in the web UI). Read-only tools accept it but don't require it. Read it from the `TASK_TRACKER_AGENT_TOKEN` environment variable rather than hard-coding or pasting it. When calling the underlying REST API directly (port `8080`), pass the same UUID via the `X-Agent-Token` HTTP header (or `Authorization: Bearer <jwt>` for password-derived JWTs).

@@ -381,6 +381,12 @@ for spec in specs:
 
 ---
 
+## 10b. Markdown is rendered
+
+Both ticket **descriptions** and **comments** are stored as markdown and rendered with marked + DOMPurify in the web UI. Use markdown freely when you write them — headings, lists, fenced code blocks, links, tables, blockquotes all render. HTML inside those fields is sanitised, so you cannot inject scripts or styles. Plain text still works; this just means humans see formatted output instead of raw `**asterisks**`.
+
+---
+
 ## 11. Troubleshooting
 
 | Symptom | Cause | Fix |
