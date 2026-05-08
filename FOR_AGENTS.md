@@ -1,93 +1,366 @@
-# FOR AGENTS — Task Tracker Onboarding
+# FOR AGENTS — Task Tracker (Taskie) Onboarding
 
-You are an AI coding agent. This document tells you how to work with the Task Tracker so you can find tickets, claim work, post updates, and link PRs.
+You are an AI coding agent. This document tells you everything you need to set up Taskie's MCP server on any device, in any agent environment, and start driving tickets.
 
-## What This Project Is
+**This file is canonical. The rest of the docs assume you've read it.**
 
-Task Tracker is a human + agent task management tool. Humans use a web UI. You use MCP tools. Both share the same data — tickets, projects, cycles, comments, PR links.
+---
 
-## Setup
+## 0. The 30-second version
 
-### 1. Get the MCP Server Running
+Taskie has two interfaces:
+- A **web UI** (port `8080`) for humans.
+- An **MCP server** (port `5100`, streamable HTTP) for you.
 
-The project ships as a Docker container with both the Flask API and MCP server. Your human runs:
+Both speak to the same database. To start:
 
-```bash
-docker run -d -p 8080:8080 -p 5100:5100 chalieai/taskie:latest
+1. Make sure Taskie is running somewhere reachable from your machine.
+2. Add an `mcpServers` entry pointing at `http://<host>:5100/mcp` to your agent's MCP config.
+3. Get an `agent_token` from the human's profile page in the web UI and stash it in `TASK_TRACKER_AGENT_TOKEN`.
+4. Verify by calling `list_tickets`.
+
+If any of those steps is unclear, keep reading.
+
+---
+
+## 1. What's running where
+
+```
+┌────────────────┐       ┌─────────────────┐       ┌──────────────┐
+│  Human (web)   │──────▶│  Flask API      │──────▶│              │
+│  port 8080     │       │  port 8080      │       │  SQLite DB   │
+└────────────────┘       └─────────────────┘       │  (instance/) │
+                                                    │              │
+┌────────────────┐       ┌─────────────────┐       │              │
+│  Agent (MCP)   │──────▶│  MCP Server     │──────▶│              │
+│  port 5100     │       │  port 5100      │       └──────────────┘
+└────────────────┘       └─────────────────┘
 ```
 
-### 2. Connect to the MCP Server
+Both processes ship in the same container. The MCP server makes HTTP calls to the Flask API internally.
 
-Add this to your MCP config (`.mcp.json` or equivalent):
+### Common deployment shapes
+
+| Where Taskie runs | MCP URL you use |
+|---|---|
+| Same machine as the agent (Docker on your laptop) | `http://localhost:5100/mcp` |
+| Home-lab / LAN server (e.g. `homeserver.lan`) | `http://homeserver.lan:5100/mcp` |
+| Cloud VM with the ports published | `http://<public-ip>:5100/mcp` |
+| Behind a TLS reverse proxy (nginx/caddy/traefik) | `https://taskie.example.com/mcp` |
+
+You don't need to know which shape it is — just the URL. **Ask the human if you don't know it.**
+
+---
+
+## 2. Run the server (only if it's not already running)
+
+If a human is already running Taskie somewhere, skip this section.
+
+### Option A — published image
+
+```bash
+docker run -d --name taskie \
+  -p 8080:8080 -p 5100:5100 \
+  -v "$(pwd)/taskie-data:/app/instance" \
+  chalieai/taskie:latest
+```
+
+The volume mount preserves the SQLite database across container restarts.
+
+### Option B — from source (development)
+
+```bash
+git clone https://github.com/chalie-ai/taskie.git
+cd taskie
+docker build -t taskie:local .
+docker run -d --name taskie -p 8080:8080 -p 5100:5100 \
+  -v "$(pwd)/instance:/app/instance" taskie:local
+```
+
+### Verify it's up
+
+```bash
+curl -s http://localhost:8080/api/projects                                # should return JSON array
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5100/mcp        # 406 means MCP is alive
+```
+
+`406` is correct — the MCP endpoint expects a `POST` with the right `Accept` header and rejects bare GETs. Anything other than 406 (typically `Connection refused` or `404`) means the server isn't reachable.
+
+---
+
+## 3. Wire up your agent's MCP client
+
+**The MCP client config does not live in the Taskie repo.** It lives wherever your agent reads its config from. Below are the right paths for the major agent runtimes.
+
+> Taskie's MCP server speaks HTTP on port `5100`. The config shape is identical across every agent runtime:
+> ```json
+> {
+>   "mcpServers": {
+>     "task-tracker": {
+>       "type": "http",
+>       "url": "http://<HOST>:5100/mcp"
+>     }
+>   }
+> }
+> ```
+> Substitute `<HOST>` for whichever URL applies to your deployment (see §1).
+
+### Claude Code
+
+**Recommended — user scope** (works in every repo, no per-project setup):
+
+```bash
+claude mcp add task-tracker --scope user --transport http http://localhost:5100/mcp
+# replace the URL for remote deployments
+```
+
+**Or — project scope** (only this repo):
+
+Create `.mcp.json` in the repo root **and add it to `.gitignore`** so machine-specific URLs don't get committed:
 
 ```json
 {
   "mcpServers": {
     "task-tracker": {
-      "type": "streamable-http",
-      "url": "http://localhost:5100/mcp"
+      "type": "http",
+      "url": "${TASKIE_MCP_URL:-http://localhost:5100/mcp}"
     }
   }
 }
 ```
 
-### 3. Authenticate
+The `${VAR:-default}` syntax lets each developer point at their own server via `export TASKIE_MCP_URL=…` without editing the file.
 
-Every write operation requires an `agent_token`. To get yours:
-- Ask your human to open `http://localhost:8080` and go to their profile page
-- Their profile shows an "Agent Token" — a UUID like `159302ea-a809-4ba3-ac6c-09041223cf2d`
-- Set the env variable: `export TASK_TRACKER_AGENT_TOKEN=<token>`
-- Or pass it as a parameter to every MCP tool call
+### Cursor
 
-### 4. Install the Skill (Optional)
+Edit `~/.cursor/mcp.json` (global) or `<project>/.cursor/mcp.json` (project) and add the same `mcpServers` block.
 
-Copy [skill.md](skill.md) to your skills directory for a complete tool reference:
+### Codex CLI / Codex IDE
 
-## How to Use the Tools
+Edit `~/.codex/config.toml` (or `~/.codex/mcp.json` depending on version) — Codex follows the standard MCP server schema. Same JSON shape.
 
-### Find Tickets to Work On
+### Gemini CLI
 
-```
-list_tickets → see all tickets
-list_tickets status=backlog → tickets needing triage
-list_tickets assignee=<your_name> → your tickets
-list_tickets search=<keyword> → search by name
-```
+Edit `~/.gemini/settings.json` and add the same `mcpServers` block.
 
-### Claim and Start Work
+### Other / unknown agent
 
-```
-get_ticket(ticket_id) → read full details
-update_ticket(ticket_id, status="progress", assignee=<your_name>) → claim it
-add_comment(ticket_id, body="Starting work on this") → note your intent
+Find the file your agent reads MCP servers from (almost always called `mcp.json`, `mcp_servers.json`, or part of a settings file). Add the same `task-tracker` block with `"type": "http"`. If your agent can't talk to an HTTP MCP server, drive Taskie directly via the raw HTTP technique in §6.
+
+### Reload the agent
+
+Most agents read MCP config at startup. Restart your agent process after editing the config. Confirm the new tools loaded — for Claude Code:
+
+```bash
+claude mcp list
+# task-tracker: http://localhost:5100/mcp (HTTP) - ✓ Connected
 ```
 
-### Link a PR
+---
 
-When you open a PR, link it:
+## 4. Authenticate
+
+Every **write** tool (`create_ticket`, `update_ticket`, `add_comment`, `submit_pr_link`, `add_relationship`, `delete_*`, `reorder_tickets`) requires an `agent_token`. Read tools (`list_tickets`, `get_ticket`, `list_comments`, `list_pr_links`, `list_relationships`, `get_ticket_history`, `get_stats`) do not.
+
+### Get the token
+
+1. Have the human open the Taskie web UI (e.g. `http://localhost:8080`).
+2. They click their profile / avatar → there's an **Agent Token** displayed (a UUID like `159302ea-a809-4ba3-ac6c-09041223cf2d`).
+3. Each human has their own token. Tokens identify *who* the agent is acting on behalf of — comments, history entries, and PR links record that user as the actor.
+
+### Where to store it
+
+Pick **one** of:
+
+| Option | Best for |
+|---|---|
+| Shell env var: `export TASK_TRACKER_AGENT_TOKEN=<uuid>` in `~/.zshrc` / `~/.bashrc` | Most setups |
+| Claude Code `~/.claude/settings.json` `env` block: `{ "env": { "TASK_TRACKER_AGENT_TOKEN": "<uuid>" } }` | Claude Code users who don't want it in the shell |
+| Pass `agent_token=<uuid>` on every tool call | Last resort — tedious and noisy |
+
+**Never hard-code the token in source files. Never paste it into chat.** Read it from `os.environ['TASK_TRACKER_AGENT_TOKEN']` (or your runtime's equivalent) and forward it on each call.
+
+---
+
+## 5. Verify end-to-end
+
+Once the MCP is wired and the token is set:
+
+```python
+list_tickets()
+# → returns a list of tickets. If you get 0 tickets that's fine — it means the DB is empty.
+# If you get an exception, check §7 troubleshooting.
+```
+
+Then try a write to confirm the token is good:
+
+```python
+# Pick any existing ticket; add a no-op comment.
+add_comment(ticket_id=1, body="Agent connection check")
+```
+
+If both calls succeed, you're done.
+
+---
+
+## 6. HTTP fallback (when MCP tools aren't loaded)
+
+Sometimes the MCP isn't loaded into the current agent session — bad config, the agent runtime hasn't reloaded, you're inside a sub-agent with a stripped tool list, etc. You can still talk to the server directly.
+
+```python
+import json, os, urllib.request
+
+URL   = os.environ.get("TASKIE_MCP_URL", "http://localhost:5100/mcp")
+TOKEN = os.environ["TASK_TRACKER_AGENT_TOKEN"]
+
+def call(name, args=None):
+    args = args or {}
+    if any(k in {"create_ticket","update_ticket","delete_ticket","add_comment",
+                 "submit_pr_link","delete_pr_link","add_relationship",
+                 "remove_relationship","reorder_tickets"} for k in (name,)):
+        args = {**args, "agent_token": TOKEN}
+    body = json.dumps({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": name, "arguments": args},
+    }).encode()
+    req = urllib.request.Request(URL, data=body, headers={
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    })
+    raw = urllib.request.urlopen(req, timeout=15).read().decode()
+    line = next(l for l in raw.splitlines() if l.startswith("data: "))
+    payload = json.loads(line[6:])
+    if "error" in payload:
+        raise RuntimeError(payload["error"])
+    return json.loads(payload["result"]["content"][0]["text"])
+
+# Examples
+projects_via_tickets = call("list_tickets")
+ticket = call("get_ticket", {"ticket_id": 1})
+new = call("create_ticket", {"name": "Test", "project_id": 1})
+```
+
+Pass `agent_token` on every write call. The response is an event-stream block; the JSON-RPC payload is the line beginning with `data:`.
+
+---
+
+## 7. Resolving project / cycle names → IDs
+
+The user will say *“create tickets in project Foo, cycle Bar v1.2.3”*. Write tools take **integer IDs**, not names.
+
+> Dedicated `list_projects` / `list_cycles` MCP tools are tracked work (TKT-243, TKT-244 in cycle Taskie v0.1.1). Cycle creation/edit via MCP is TKT-245. Until those land, use the workaround below.
+
+**Project ID:**
+```python
+# list_tickets exposes project_name on every ticket. Pick one and read project_id off get_ticket.
+tickets = call("list_tickets")
+match   = next(t for t in tickets if t["project_name"] == "Foo")
+project_id = call("get_ticket", {"ticket_id": match["id"]})["project_id"]
+```
+
+**Cycle ID:**
+```python
+# Same pattern with cycle_id. Requires at least one ticket already in that cycle.
+# If the cycle is empty: ask the human to create one ticket in it via the web UI first,
+# OR ask them for the cycle ID outright.
+```
+
+**New cycle:** can only be created via the web UI right now (JWT-auth API endpoint, not exposed via MCP).
+
+---
+
+## 8. Canonical enums
+
+| Field | Allowed values |
+|---|---|
+| `status` (ticket) | `backlog`, `todo`, `progress`, `review`, `done`, `cancel` |
+| `type` | `bug`, `feature`, `chore` |
+| `priority` | `urgent`, `high`, `medium`, `low`, `none` |
+| `relationship_type` | `related`, `depends_on`, `blocks` |
+| `pr_link.status` | `open`, `merged`, `closed` |
+
+If you encounter a status of `-` on a legacy ticket, treat it as `backlog` (it's being phased out — TKT-241).
+
+---
+
+## 9. Common workflows
+
+### Find tickets to work on
 
 ```
-submit_pr_link(ticket_id, url=<pr_url>, title=<pr_title>, status="open")
-add_comment(ticket_id, body="PR opened: <url>", pr_url=<url>, pr_title=<title>)
+list_tickets                                  → see everything
+list_tickets status=backlog                   → tickets needing triage
+list_tickets status=todo                      → ready-to-start tickets
+list_tickets assignee=<your_name>             → already assigned to you
+list_tickets search=<keyword>                 → full-text search on name + description
 ```
 
-When merged:
+### Claim and start a ticket
 
-```
-add_comment(ticket_id, body="Merged and deployed")
-update_ticket(ticket_id, status="done")
-```
-
-### Search
-
-```
-list_tickets(search=<query>) → server-side search across ticket names and descriptions
+```python
+get_ticket(ticket_id=5)                                          # read full context
+update_ticket(ticket_id=5, status="progress", assignee="you")    # claim it
+add_comment(ticket_id=5, body="Starting implementation")
 ```
 
-## Key Rules
+### Open a PR
 
-1. **Always read the ticket before working on it.** Use `get_ticket` and `list_comments` to understand context.
-2. **Announce intent.** Add a comment when you start, when you open a PR, and when you finish.
-3. **Link PRs.** Every code change should link back to a ticket via `submit_pr_link`.
-4. **Update status.** Move tickets through the flow: `backlog` → `todo` → `progress` → `review` → `done`.
-5. **Use the relationship tools.** If one ticket depends on another, create a relationship. If a ticket blocks another, note it.
+```python
+submit_pr_link(ticket_id=5, url="https://github.com/o/r/pull/42",
+               title="Fix login timeout", status="open")
+add_comment(ticket_id=5, body="PR opened: https://github.com/o/r/pull/42")
+update_ticket(ticket_id=5, status="review")
+```
+
+### Merge & close
+
+```python
+add_comment(ticket_id=5, body="Merged and deployed")
+update_ticket(ticket_id=5, status="done")
+```
+
+### Bulk-create tickets in a cycle
+
+```python
+project_id, cycle_id = ...  # resolve via §7
+for spec in specs:
+    r = call("create_ticket", {**spec,
+                               "project_id": project_id,
+                               "cycle_id": cycle_id,
+                               "status": "backlog"})
+    print(f"created {r['display_id']}: {r['name']}")
+```
+
+---
+
+## 10. Conventions for agents
+
+1. **Read first.** `get_ticket` + `list_comments` before doing anything.
+2. **Announce intent.** Comment when you start, when you open a PR, when you finish.
+3. **Link every PR.** Use `submit_pr_link` so the ticket has a permanent record.
+4. **Move statuses honestly.** `backlog` → `todo` → `progress` → `review` → `done`.
+5. **Use relationships.** `depends_on` / `blocks` / `related` — capture the real graph.
+6. **Reference tickets by `display_id` (`TKT-NNN`)** when talking to humans, by `id` (int) when calling the API.
+7. **Never log the token.** Read it from env, pass it on the wire, don't print it.
+
+---
+
+## 11. Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Connection refused` to port 5100 | Server not running | Start the container (§2) |
+| `406 Not Acceptable` to `GET /mcp` | This is *expected* on a bare GET — it confirms MCP is up | Use POST with the right Accept header (§6), or wait for your agent to do it |
+| `mcp__task-tracker__*` tools missing in your session | MCP config wrong, or agent not reloaded | Re-check §3, restart the agent, then `claude mcp list` (or your agent's equivalent) |
+| Tool call returns `agent_token required` | Token not set or not passed | Set `TASK_TRACKER_AGENT_TOKEN` (§4); confirm with `echo $TASK_TRACKER_AGENT_TOKEN` |
+| Tool call returns `403` / `invalid token` | Token typo, or token belongs to a different Taskie instance | Re-copy from the human's profile page on the *same* server you're calling |
+| `create_ticket` succeeds but ticket is in the wrong project/cycle | Forgot to pass `project_id` / `cycle_id` | Resolve IDs via §7, pass explicitly |
+| `list_tickets` returns 0 results when you expect some | DB is genuinely empty, *or* the server you're talking to isn't the one the human is looking at | Verify the URL — humans and agents must point at the same Taskie instance |
+
+If something else is broken, the MCP server logs are inside the container: `docker logs taskie`.
+
+---
+
+## 12. Tool reference
+
+The full per-tool reference (parameters, return shapes, examples) lives in [skill.md](skill.md). Copy it into your agent's skills directory if your agent supports skill files (Claude Code, Cursor, etc.).

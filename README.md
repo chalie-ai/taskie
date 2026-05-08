@@ -57,7 +57,7 @@ See [FOR_AGENTS.md](FOR_AGENTS.md) for full agent onboarding instructions.
 {
   "mcpServers": {
     "task-tracker": {
-      "type": "streamable-http",
+      "type": "http",
       "url": "http://localhost:5100/mcp"
     }
   }

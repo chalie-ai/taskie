@@ -46,3 +46,6 @@ docs/superpowers/
 
 # Docker
 docker-compose.override.yml
+
+# MCP client config — per-user/per-agent, never commit
+.mcp.json
