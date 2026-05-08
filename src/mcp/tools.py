@@ -20,7 +20,7 @@ def get_client(token=None):
 TOOL_DEFS = [
     types.Tool(
         name="list_tickets",
-        description="Search and list tickets with optional filters: cycle_id, project_id, status, assignee, search",
+        description="Search and list tickets with optional filters: cycle_id, project_id, status, assignee, search, no_cycle",
         inputSchema={
             "type": "object",
             "properties": {
@@ -31,6 +31,7 @@ TOOL_DEFS = [
                 "assignee": {"type": "string", "description": "Filter by assignee name"},
                 "assignee_id": {"type": "integer", "description": "Filter by assignee user ID"},
                 "search": {"type": "string", "description": "Server-side search on name and description"},
+                "no_cycle": {"type": "boolean", "description": "Only tickets without a cycle (the Backlog page)"},
             },
         },
     ),
@@ -280,6 +281,8 @@ def call_tool(name: str, arguments: dict) -> str:
         if name == "list_tickets":
             params = {k: v for k, v in arguments.items()
                       if k in ('cycle_id', 'project_id', 'status', 'assignee', 'assignee_id', 'search') and v}
+            if arguments.get('no_cycle'):
+                params['no_cycle'] = '1'
             r = client.get(api_url('/tickets'), params=params)
             r.raise_for_status()
             tickets = r.json()

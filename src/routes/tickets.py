@@ -10,6 +10,7 @@ tickets_bp = Blueprint('tickets', __name__)
 @tickets_bp.route('/tickets', methods=['GET'])
 @optional_auth
 def list_tickets():
+    no_cycle = request.args.get('no_cycle', '').lower() in ('1', 'true', 'yes')
     return jsonify(TicketService.list_tickets(
         cycle_id=request.args.get('cycle_id', type=int),
         project_id=request.args.get('project_id', type=int),
@@ -17,6 +18,7 @@ def list_tickets():
         assignee=request.args.get('assignee'),
         assignee_id=request.args.get('assignee_id', type=int),
         search=request.args.get('search'),
+        no_cycle=no_cycle,
     ))
 
 
@@ -35,8 +37,6 @@ def create_ticket():
     data = request.get_json()
     if not data or not data.get('name'):
         return jsonify({'error': 'name is required'}), 400
-    if not data.get('cycle_id'):
-        return jsonify({'error': 'cycle_id is required'}), 400
     return jsonify(TicketService.create_ticket(data)), 201
 
 

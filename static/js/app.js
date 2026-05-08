@@ -135,7 +135,8 @@ const App = {
   filtered() {
     let list = this.tickets;
     const cid = this.activeCycleId;
-    if (this.view === 'project' && this.activeProjectId) list = list.filter(t => t.project_id == this.activeProjectId);
+    if (this.view === 'backlog') list = list.filter(t => !t.cycle_id);
+    else if (this.view === 'project' && this.activeProjectId) list = list.filter(t => t.project_id == this.activeProjectId);
     else if (cid) list = list.filter(t => t.cycle_id == cid);
     const f = this.filters;
     if (f.status) list = list.filter(t => t.status === f.status);
@@ -148,7 +149,7 @@ const App = {
   // ── Render ──
   render() {
     this.renderSidebar();
-    const isTicketView = ['cycle','project'].includes(this.view);
+    const isTicketView = ['cycle','project','backlog'].includes(this.view);
     $('#filterbar').toggle(isTicketView);
     if (this.view === 'projects') {
       this.renderProjectsPage();
@@ -157,6 +158,10 @@ const App = {
       this.renderUsersPage();
     } else if (this.view === 'profile') {
       this.renderProfilePage();
+    } else if (this.view === 'backlog') {
+      this.renderCrumbs();
+      $('#content-area').html(this.backlogHTML());
+      this.bindBacklogEvents();
     } else {
       this.renderCrumbs();
       $('#content-area').html(this.mode === 'board' ? this.boardHTML() : this.listHTML());
@@ -182,6 +187,7 @@ const App = {
     const isAdmin = AUTH.user()?.role === 'admin';
     $('#sb-people-section').toggle(isAdmin);
     if (isAdmin) $('#cnt-users').text(this.users.length);
+    $('#cnt-backlog').text(this.tickets.filter(t => !t.cycle_id).length);
 
     // Filter chip styling
     const f = this.filters;
@@ -234,13 +240,15 @@ const App = {
     if (this.view === 'project' && this.activeProjectId) {
       const p = this.projects.find(p => p.id == this.activeProjectId);
       html = `<span class="crumb" onclick="App.showProjectsView()">Projects</span><span class="crumb-sep">${I.chevRight}</span><span class="crumb active"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p?.color};margin-right:6px"></span>${p?.name}</span>`;
+    } else if (this.view === 'backlog') {
+      html = `<span class="crumb active">Backlog</span><span style="color:var(--text-faint);font-size:12px;margin-left:4px">· tickets without a cycle · ${this.filtered().length} tickets</span>`;
     } else {
       const labels = { inbox:'Board', cycle: this.cycles.find(c => c.id === this.activeCycleId)?.title || '' };
       html = `<span class="crumb active">${labels[this.view] || 'Board'}</span>`;
-    }
-    const c = this.cycles.find(c => c.id === this.activeCycleId);
-    if (c && this.view !== 'projects') {
-      html += `<span style="color:var(--text-faint);font-size:12px;margin-left:4px">· ${c.description} · ${this.filtered().length} tickets</span>`;
+      const c = this.cycles.find(c => c.id === this.activeCycleId);
+      if (c) {
+        html += `<span style="color:var(--text-faint);font-size:12px;margin-left:4px">· ${c.description || ''} · ${this.filtered().length} tickets</span>`;
+      }
     }
     $('#crumbs').html(html);
   },
@@ -248,7 +256,8 @@ const App = {
   // ── Board ──
   boardHTML() {
     const filtered = this.filtered();
-    const boardStatuses = STATUSES.filter(s => s !== 'cancel');
+    // Backlog is now the standalone Backlog page (cycle_id IS NULL); no column.
+    const boardStatuses = STATUSES.filter(s => s !== 'cancel' && s !== 'backlog');
     let cols = '';
     boardStatuses.forEach(s => {
       const items = s === 'done'
@@ -341,6 +350,73 @@ const App = {
     </div>`;
   },
 
+  // ── Backlog page ──
+  backlogHTML() {
+    const filtered = this.filtered();
+    if (!filtered.length) {
+      return `<div style="padding:60px 18px;text-align:center;color:var(--text-faint);font-size:13px">
+        No tickets in the backlog. Tickets with no cycle land here.
+      </div>`;
+    }
+    // Group by project, then within a project sort by priority then status.
+    const PRIO_RANK = { urgent: 0, high: 1, medium: 2, low: 3, none: 4 };
+    const STATUS_RANK = { progress: 0, review: 1, todo: 2, backlog: 3, done: 4, cancel: 5 };
+    const byProject = new Map();
+    for (const t of filtered) {
+      const k = t.project_id || 'none';
+      if (!byProject.has(k)) byProject.set(k, []);
+      byProject.get(k).push(t);
+    }
+    let html = `<div class="list-view backlog-view">`;
+    for (const [pid, rows] of byProject) {
+      rows.sort((a, b) =>
+        (PRIO_RANK[a.priority] ?? 9) - (PRIO_RANK[b.priority] ?? 9)
+        || (STATUS_RANK[a.status] ?? 9) - (STATUS_RANK[b.status] ?? 9));
+      const proj = this.projects.find(p => p.id == pid);
+      const projLabel = proj ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${proj.color};margin-right:6px"></span>${this.esc(proj.name)}` : '<span style="color:var(--text-faint)">No project</span>';
+      html += `<div class="list-group">
+        <div class="list-group-head">${projLabel}<span class="count">${rows.length}</span></div>
+        ${rows.map(t => this.backlogRowHTML(t)).join('')}
+      </div>`;
+    }
+    html += `</div>`;
+    return html;
+  },
+
+  backlogRowHTML(t) {
+    const proj = this.projects.find(p => p.id == t.project_id);
+    const prioCls = t.priority === 'urgent' || t.priority === 'high' ? 'high' : t.priority === 'medium' ? 'medium' : 'low';
+    const prioHTML = t.priority === 'urgent'
+      ? `<span class="card-prio urgent" title="Urgent"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--p-high)" stroke-width="1.5"><rect x="3" y="3" width="10" height="10" rx="2"/><path d="M8 6v3M8 11h.01" stroke-width="1.6"/></svg></span>`
+      : `<span class="card-prio ${prioCls}"><span class="prio-bars"><span class="b1"></span><span class="b2"></span><span class="b3"></span></span></span>`;
+    const cycleOpts = ['<option value="">— assign cycle —</option>']
+      .concat(this.cycles.map(c => `<option value="${c.id}">${this.esc(c.title)}</option>`))
+      .join('');
+    return `<div class="list-row" data-ticket-id="${t.id}">
+      <span class="row-prio" onclick="App.openTicket(${t.id})">${prioHTML}</span>
+      <span class="card-type ${TYPE_CLASS[t.type] || 'feature'}" onclick="App.openTicket(${t.id})">${TYPE_LETTER[t.type] || 'F'}</span>
+      <span class="row-id" onclick="App.openTicket(${t.id})">${t.display_id}</span>
+      <span class="row-title" onclick="App.openTicket(${t.id})">${this.esc(t.name)}</span>
+      <span class="row-proj" onclick="App.openTicket(${t.id})"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${proj?.color};margin-right:6px"></span>${proj?.name||''}</span>
+      <span class="row-comments" onclick="App.openTicket(${t.id})">${t.comment_count > 0 ? `${I.comment} ${t.comment_count}` : ''}</span>
+      <span class="row-cycle-assign">
+        <select class="prop-pill backlog-cycle-select" data-ticket-id="${t.id}" onclick="event.stopPropagation()">${cycleOpts}</select>
+      </span>
+    </div>`;
+  },
+
+  bindBacklogEvents() {
+    const self = this;
+    $('.backlog-cycle-select').off('change').on('change', function() {
+      const cid = parseInt($(this).val());
+      const tid = parseInt($(this).data('ticket-id'));
+      if (!cid || !tid) return;
+      $.ajax({ url: `/api/tickets/${tid}`, method: 'PATCH', contentType: 'application/json', data: JSON.stringify({ cycle_id: cid }) })
+        .then(updated => { self.tickets = self.tickets.map(t => t.id === tid ? { ...t, ...updated } : t); self.render(); })
+        .fail(e => { console.error(e); alert('Failed to assign cycle'); });
+    });
+  },
+
   // ── Projects page ──
   renderProjectsPage() {
     const all = this.tickets;
@@ -407,7 +483,8 @@ const App = {
     const statusOpts = STATUSES.map(s => `<option value="${s}" ${t.status===s?'selected':''}>${STATUS_LABELS[s]}</option>`).join('');
     const prioOpts = ['urgent','high','medium','low','none'].map(p => `<option value="${p}" ${t.priority===p?'selected':''}>${p.charAt(0).toUpperCase()+p.slice(1)}</option>`).join('');
     const projOpts = this.projects.map(p => `<option value="${p.id}" ${t.project_id===p.id?'selected':''}>${p.name}</option>`).join('');
-    const cycleOpts = this.cycles.map(c => `<option value="${c.id}" ${t.cycle_id===c.id?'selected':''}>${c.title}</option>`).join('');
+    const cycleOpts = `<option value=""${!t.cycle_id?' selected':''}>— Backlog (no cycle) —</option>` +
+      this.cycles.map(c => `<option value="${c.id}" ${t.cycle_id===c.id?'selected':''}>${c.title}</option>`).join('');
     const userOpts = this.users.map(u => `<option value="${u.id}" ${t.assignee_id===u.id?'selected':''}>${this.esc(u.name)}</option>`).join('');
 
     const commentsHTML = (t.comments||[]).map(c => {
@@ -513,7 +590,9 @@ const App = {
     $('.panel-patch').on('change', function() {
       const field = $(this).data('field');
       const val = $(this).val();
-      if (val !== '') App.patchTicket(t.id, field, val);
+      // Allow clearing cycle_id (Backlog) by sending null on empty.
+      if (field === 'cycle_id') App.patchTicket(t.id, field, val === '' ? null : val);
+      else if (val !== '') App.patchTicket(t.id, field, val);
     });
     $('.panel-patch-input').on('blur', function() {
       const field = $(this).data('field');
@@ -635,7 +714,9 @@ const App = {
   // ── New ticket ──
   showNewTicketModal() {
     const projOpts = this.projects.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-    const cycleOpts = this.cycles.map(c => `<option value="${c.id}" ${c.id===this.activeCycleId?'selected':''}>${c.title}</option>`).join('');
+    const onBacklog = this.view === 'backlog';
+    const cycleOpts = `<option value=""${onBacklog?' selected':''}>— Backlog (no cycle) —</option>` +
+      this.cycles.map(c => `<option value="${c.id}" ${!onBacklog && c.id===this.activeCycleId?'selected':''}>${c.title}</option>`).join('');
     const userOpts = this.users.map(u => `<option value="${u.id}">${this.esc(u.name)}</option>`).join('');
     const modal = $(`
       <div class="cmd-overlay" style="z-index:1500" id="new-ticket-overlay" onclick="if(event.target===this) $('#new-ticket-overlay').remove()">
@@ -680,7 +761,7 @@ const App = {
           name, description: $('#nt-desc').val(),
           type: $('#nt-type').val(), priority: $('#nt-priority').val(),
           status: $('#nt-status').val(), project_id: parseInt($('#nt-project').val()),
-          cycle_id: parseInt($('#nt-cycle').val()),
+          cycle_id: $('#nt-cycle').val() ? parseInt($('#nt-cycle').val()) : null,
           assignee_id: assigneeId ? parseInt(assigneeId) : null,
           due_date: $('#nt-due').val() || null,
         }),

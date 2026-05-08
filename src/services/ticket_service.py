@@ -50,9 +50,11 @@ class TicketService:
         return base
 
     @staticmethod
-    def list_tickets(cycle_id=None, project_id=None, status=None, assignee=None, assignee_id=None, search=None):
+    def list_tickets(cycle_id=None, project_id=None, status=None, assignee=None, assignee_id=None, search=None, no_cycle=False):
         q = Ticket.query
-        if cycle_id:
+        if no_cycle:
+            q = q.filter(Ticket.cycle_id.is_(None))
+        elif cycle_id:
             q = q.filter(Ticket.cycle_id == cycle_id)
         if project_id:
             q = q.filter(Ticket.project_id == project_id)
@@ -83,8 +85,6 @@ class TicketService:
 
     @staticmethod
     def create_ticket(data):
-        if not data.get('cycle_id'):
-            return {'error': 'cycle_id is required'}
         if data.get('status') in (None, '', '-'):
             data['status'] = 'backlog'
         due_date = data.get('due_date')

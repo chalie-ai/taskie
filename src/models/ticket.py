@@ -12,7 +12,7 @@ class Ticket(db.Model):
     priority = db.Column(db.String(20), default='none')
     status = db.Column(db.String(20), default='backlog')
     project_id = db.Column(db.Integer, db.ForeignKey('projects.id'))
-    cycle_id = db.Column(db.Integer, db.ForeignKey('cycles.id'), nullable=False)
+    cycle_id = db.Column(db.Integer, db.ForeignKey('cycles.id'), nullable=True)
     assignee = db.Column(db.String(255), nullable=True)
     assignee_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     due_date = db.Column(db.Date, nullable=True)
