@@ -245,9 +245,13 @@ const App = {
   // ── Board ──
   boardHTML() {
     const filtered = this.filtered();
+    const boardStatuses = STATUSES.filter(s => s !== 'cancel');
     let cols = '';
-    STATUSES.forEach(s => {
-      const items = filtered.filter(t => t.status === s);
+    boardStatuses.forEach(s => {
+      const items = s === 'done'
+        ? filtered.filter(t => t.status === 'done' || t.status === 'cancel')
+                  .sort((a, b) => (a.status === 'cancel') - (b.status === 'cancel'))
+        : filtered.filter(t => t.status === s);
       cols += `<div class="col">
         <div class="col-head">
           <span class="dot ${STATUS_DOT[s]}"></span><span>${STATUS_LABELS[s]}</span><span class="count">${items.length}</span>
@@ -266,7 +270,9 @@ const App = {
   },
 
   cardHTML(t) {
-    const isDone = t.status === 'done' || t.status === 'cancel';
+    const isCancel = t.status === 'cancel';
+    const isDone = t.status === 'done' || isCancel;
+    const cardCls = isCancel ? 'cancel' : (isDone ? 'done' : '');
     const proj = this.projects.find(p => p.id == t.project_id);
     const prioCls = t.priority === 'urgent' || t.priority === 'high' ? 'high' : t.priority === 'medium' ? 'medium' : t.priority === 'low' ? 'low' : 'none';
     const lvls = PRIO_LEVELS[t.priority] || 0;
@@ -278,10 +284,11 @@ const App = {
         <span class="prio-bars"><span class="b1"></span><span class="b2"></span><span class="b3"></span></span>
       </span>`;
     }
-    return `<div class="card ${isDone ? 'done' : ''}" data-ticket-id="${t.id}" onclick="App.openTicket(${t.id})">
+    return `<div class="card ${cardCls}" data-ticket-id="${t.id}" onclick="App.openTicket(${t.id})">
       <div class="card-top">
         <span class="card-id">${t.display_id}</span>
         <span class="card-type ${TYPE_CLASS[t.type] || 'feature'}">${TYPE_LETTER[t.type] || 'F'}</span>
+        ${isCancel ? '<span class="card-cancel-tag">Cancelled</span>' : ''}
         ${prioHTML}
       </div>
       <div class="card-title">${this.esc(t.name)}</div>
