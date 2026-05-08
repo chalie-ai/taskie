@@ -1,5 +1,6 @@
 from datetime import datetime
-from src.models import db, Ticket, TicketHistory
+from flask import g, current_app
+from src.models import db, Ticket, TicketHistory, TicketRelationship
 from src.services.relationship_service import RelationshipService
 from src.services.history_service import HistoryService
 
@@ -84,6 +85,8 @@ class TicketService:
     def create_ticket(data):
         if not data.get('cycle_id'):
             return {'error': 'cycle_id is required'}
+        if data.get('status') in (None, '', '-'):
+            data['status'] = 'backlog'
         due_date = data.get('due_date')
         if isinstance(due_date, str) and due_date:
             due_date = datetime.strptime(due_date, '%Y-%m-%d').date()
@@ -121,6 +124,10 @@ class TicketService:
         t = Ticket.query.get(ticket_id)
         if not t:
             return None
+        # Coerce status placeholders to backlog: the `-` option is gone but
+        # an old client or API caller could still send it (or empty string).
+        if 'status' in data and data['status'] in (None, '', '-'):
+            data['status'] = 'backlog'
         author = data.get('author_name', 'Dylan')
         allowed = ['name', 'description', 'type', 'priority', 'status',
                    'project_id', 'cycle_id', 'assignee', 'assignee_id', 'due_date', 'sort_order']
@@ -167,6 +174,19 @@ class TicketService:
         t = Ticket.query.get(ticket_id)
         if not t:
             return False
+        # Audit trail before the row is gone — comments/PR links cascade via the
+        # ORM relationship, but TicketHistory and TicketRelationship don't, so
+        # we clean those up explicitly to avoid FK constraint failures.
+        actor = getattr(g, 'user_id', None)
+        current_app.logger.warning(
+            "ticket_deleted ticket_id=%s display_id=%s name=%r actor_user_id=%s",
+            t.id, t.display_id, t.name, actor,
+        )
+        TicketHistory.query.filter_by(ticket_id=ticket_id).delete(synchronize_session=False)
+        TicketRelationship.query.filter(
+            db.or_(TicketRelationship.ticket_id == ticket_id,
+                   TicketRelationship.related_ticket_id == ticket_id)
+        ).delete(synchronize_session=False)
         db.session.delete(t)
         db.session.commit()
         return True

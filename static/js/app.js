@@ -15,6 +15,7 @@ const I = {
   pencil:   '<svg class="svg-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg>',
   folder:   '<svg class="svg-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4.5a1 1 0 011-1h3.5l1 1.5H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1v-7.5z"/></svg>',
   pr:       '<svg class="svg-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><path d="M4 5.5v5"/><path d="M5.5 4H10a2 2 0 012 2v5"/></svg>',
+  trash:    '<svg class="svg-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9M7 6.5v5M9 6.5v5"/></svg>',
 };
 
 const STATUSES = ['backlog','todo','progress','review','done','cancel'];
@@ -438,7 +439,7 @@ const App = {
           </span>
           <div class="panel-head-actions">
             <button class="btn-icon" title="Copy link" onclick="App.copyTicketLink(${t.id})">${I.attach}</button>
-            <button class="btn-icon" title="More">${I.more}</button>
+            <button class="btn-icon" title="Delete ticket" onclick="App.deleteTicket(${t.id}, '${this.esc(t.display_id)}')" style="color:var(--p-high)">${I.trash}</button>
             <button class="btn-icon" onclick="App.closePanel()" title="Close (Esc)">${I.close}</button>
           </div>
         </div>
@@ -454,7 +455,7 @@ const App = {
           <h2 class="panel-title" contenteditable="true" id="panel-title-edit" onblur="App.saveTitle(${t.id}, this.innerText)">${this.esc(t.name)}</h2>
           <div class="panel-props">
             <div class="panel-prop-label">Status</div>
-            <div class="panel-prop-value"><select class="prop-pill panel-patch" data-field="status"><option value="">—</option>${statusOpts}</select></div>
+            <div class="panel-prop-value"><select class="prop-pill panel-patch" data-field="status">${statusOpts}</select></div>
             <div class="panel-prop-label">Priority</div>
             <div class="panel-prop-value"><select class="prop-pill panel-patch" data-field="priority"><option value="">—</option>${prioOpts}</select></div>
             <div class="panel-prop-label">Assignee</div>
@@ -985,6 +986,15 @@ const App = {
       $('#edit-user-overlay').remove();
       this.render();
     } catch (e) { console.error(e); alert('Error updating user'); }
+  },
+
+  async deleteTicket(id, display) {
+    if (!confirm(`Delete ${display}?\n\nThis is permanent — the ticket and its comments, PR links, and history will be removed.`)) return;
+    try {
+      await $.ajax({ url: `/api/tickets/${id}`, method: 'DELETE' });
+      this.closePanel();
+      await this.reloadTickets();
+    } catch (e) { console.error(e); alert('Error deleting ticket: ' + (e.responseJSON?.error || e.statusText)); }
   },
 
   async deleteUser(id) {

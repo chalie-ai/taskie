@@ -19,6 +19,16 @@ def create_app():
         db.create_all()
         from src.services.user_service import UserService
         UserService.bootstrap_master(app)
+        # Backfill legacy ticket rows that pre-date the canonical status set.
+        # `-` was used as an "unset" placeholder; NULL slipped in for tickets
+        # created before status had a default. Both should resolve to backlog.
+        from src.models import Ticket
+        legacy = Ticket.query.filter(
+            db.or_(Ticket.status.is_(None), Ticket.status == '', Ticket.status == '-')
+        )
+        if legacy.count():
+            legacy.update({Ticket.status: 'backlog'}, synchronize_session=False)
+            db.session.commit()
 
     @app.route('/')
     def index():
