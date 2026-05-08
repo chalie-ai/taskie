@@ -315,7 +315,7 @@ call("update_cycle", {"cycle_id": cycle["id"], "status": "completed"})
 | `relationship_type` | `related`, `depends_on`, `blocks` |
 | `pr_link.status` | `open`, `merged`, `closed` |
 
-If you encounter a status of `-` on a legacy ticket, treat it as `backlog` (it's being phased out — TKT-241).
+`-` is no longer a valid status — the placeholder option was removed in TKT-241. Pre-existing rows are backfilled to `backlog` on server startup, and the API coerces any incoming `-` / empty / `null` status to `backlog`. Always send one of the six values above.
 
 ---
 

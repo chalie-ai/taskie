@@ -61,7 +61,7 @@ Update ticket fields. Requires `agent_token`.
 | `due_date` | str | New due date |
 
 ### delete_ticket
-Delete a ticket. Requires `agent_token`.
+Hard-delete a ticket. Requires `agent_token`. Comments, PR links, history, and relationships are removed in the same transaction. The deletion is logged at WARNING level to the server log (grep `ticket_deleted` in `docker logs taskie`) — there is no undo.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
