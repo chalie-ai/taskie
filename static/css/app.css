@@ -260,8 +260,27 @@
 
     .panel-section { margin-top: 18px; }
     .panel-section-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
-    .panel-desc { font-size: 13.5px; line-height: 1.55; color: var(--text); white-space: pre-wrap; }
-    .panel-desc.empty { color: var(--text-faint); font-style: italic; }
+    .panel-desc { font-size: 13.5px; line-height: 1.55; color: var(--text); cursor: text; }
+    .panel-desc.empty { color: var(--text-faint); font-style: italic; cursor: pointer; }
+    #panel-desc-wrap { position: relative; }
+    .panel-desc-edit { position: absolute; top: 0; right: 0; opacity: 0; transition: opacity 0.15s; }
+    #panel-desc-wrap:hover .panel-desc-edit { opacity: 1; }
+    /* Rendered markdown — keep tight to match the panel scale */
+    .panel-desc p { margin: 0 0 0.6em; }
+    .panel-desc p:last-child { margin-bottom: 0; }
+    .panel-desc h1, .panel-desc h2, .panel-desc h3, .panel-desc h4 { font-weight: 600; margin: 0.8em 0 0.4em; line-height: 1.3; }
+    .panel-desc h1 { font-size: 17px; }
+    .panel-desc h2 { font-size: 15px; }
+    .panel-desc h3, .panel-desc h4 { font-size: 13.5px; }
+    .panel-desc ul, .panel-desc ol { margin: 0 0 0.6em; padding-left: 22px; }
+    .panel-desc li { margin: 0.15em 0; }
+    .panel-desc code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--bg-sunken); padding: 1px 5px; border-radius: 3px; }
+    .panel-desc pre { background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; overflow-x: auto; margin: 0 0 0.6em; }
+    .panel-desc pre code { background: none; padding: 0; font-size: 12px; }
+    .panel-desc blockquote { margin: 0 0 0.6em; padding: 0 0 0 12px; border-left: 3px solid var(--border); color: var(--text-muted); }
+    .panel-desc a { color: var(--accent-text); text-decoration: underline; }
+    .panel-desc table { border-collapse: collapse; margin: 0 0 0.6em; }
+    .panel-desc th, .panel-desc td { border: 1px solid var(--border); padding: 4px 8px; font-size: 12.5px; }
 
     .comments { display: flex; flex-direction: column; gap: 16px; }
     .comment { display: grid; grid-template-columns: 28px 1fr; gap: 10px; }
@@ -272,7 +291,14 @@
     .comment-author { font-weight: 600; color: var(--text); }
     .comment-author .agent-tag { display: inline-block; margin-left: 5px; padding: 1px 5px; font-size: 9.5px; font-weight: 600; background: var(--accent-soft); color: var(--accent-text); border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
     .comment-time { color: var(--text-faint); font-size: 11px; }
-    .comment-text { font-size: 13px; color: var(--text); margin-top: 3px; line-height: 1.5; white-space: pre-wrap; }
+    .comment-text { font-size: 13px; color: var(--text); margin-top: 3px; line-height: 1.5; }
+    .comment-text p { margin: 0 0 0.5em; }
+    .comment-text p:last-child { margin-bottom: 0; }
+    .comment-text ul, .comment-text ol { margin: 0 0 0.5em; padding-left: 20px; }
+    .comment-text code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; background: var(--bg-sunken); padding: 1px 4px; border-radius: 3px; }
+    .comment-text pre { background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; overflow-x: auto; margin: 0 0 0.5em; }
+    .comment-text pre code { background: none; padding: 0; }
+    .comment-text a { color: var(--accent-text); text-decoration: underline; }
     .comment-pr { margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px; color: var(--text); }
     .pr-status { margin-left: 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; padding: 1px 5px; border-radius: 3px; }
     .pr-status.merged { background: oklch(0.94 0.06 295); color: oklch(0.45 0.16 295); }

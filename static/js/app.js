@@ -410,7 +410,7 @@ const App = {
             <span class="comment-author">${this.esc(c.author_name)}${isAgent?'<span class="agent-tag">agent</span>':''}</span>
             <span class="comment-time">${this.relDate(c.created_at)}</span>
           </div>
-          <div class="comment-text">${this.esc(c.body)}</div>
+          <div class="comment-text">${this.md(c.body)}</div>
           ${c.pr_link ? `<div class="comment-pr">${I.pr} <span>${this.esc(c.pr_link.title||'')}</span><span class="pr-status ${c.pr_link.status}">${c.pr_link.status}</span></div>` : ''}
         </div>
       </div>`;
@@ -469,7 +469,13 @@ const App = {
           </div>
           <div class="panel-section">
             <div class="panel-section-title">Description</div>
-            <div class="panel-desc ${!t.description?'empty':''}">${this.esc(t.description) || 'No description yet — click to edit.'}</div>
+            <div id="panel-desc-wrap" style="position:relative">
+              ${t.description
+                ? `<div id="panel-desc" class="panel-desc" ondblclick="App.editDescription(${t.id})">${this.md(t.description)}</div>
+                   <button class="btn-icon panel-desc-edit" title="Edit description" onclick="App.editDescription(${t.id})">${I.pencil}</button>`
+                : `<div id="panel-desc" class="panel-desc empty" onclick="App.editDescription(${t.id})">No description yet — click to edit.</div>`
+              }
+            </div>
           </div>
           <div class="panel-section">
             <div class="panel-section-title rel-section-head">
@@ -1250,6 +1256,62 @@ const App = {
   },
 
   esc(s) { return $('<span>').text(s||'').html(); },
+
+  // Render markdown to sanitised HTML. marked + DOMPurify are loaded from CDN
+  // in index.html. If either fails to load, fall back to plain escaped text so
+  // we never inject raw markdown source into the DOM as HTML.
+  md(s) {
+    if (!s) return '';
+    if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+      return this.esc(s);
+    }
+    const raw = marked.parse(String(s), { breaks: true, gfm: true });
+    return DOMPurify.sanitize(raw, {
+      ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'class', 'src', 'alt'],
+    });
+  },
+
+  editDescription(id) {
+    const t = this.tickets.find(x => x.id == id);
+    if (!t) return;
+    const $wrap = $('#panel-desc-wrap');
+    if ($wrap.find('textarea').length) return;
+    const current = t.description || '';
+    $wrap.html(`
+      <textarea id="desc-edit" class="form-control" rows="6" style="font-family:inherit;font-size:13px;width:100%;resize:vertical">${this.esc(current)}</textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+        <button class="btn btn-ghost" onclick="App.renderDescription(${id})">Cancel</button>
+        <button class="btn btn-primary" onclick="App.saveDescription(${id})">Save</button>
+      </div>
+    `);
+    setTimeout(() => $('#desc-edit').focus(), 0);
+  },
+
+  renderDescription(id) {
+    const t = this.tickets.find(x => x.id == id);
+    if (!t) return;
+    const $wrap = $('#panel-desc-wrap');
+    if (t.description) {
+      $wrap.html(
+        `<div id="panel-desc" class="panel-desc" ondblclick="App.editDescription(${id})">${this.md(t.description)}</div>` +
+        `<button class="btn-icon panel-desc-edit" title="Edit description" onclick="App.editDescription(${id})">${I.pencil}</button>`
+      );
+    } else {
+      $wrap.html(`<div id="panel-desc" class="panel-desc empty" onclick="App.editDescription(${id})">No description yet — click to edit.</div>`);
+    }
+  },
+
+  async saveDescription(id) {
+    const val = $('#desc-edit').val();
+    try {
+      const updated = await $.ajax({ url: `/api/tickets/${id}`, method: 'PATCH', contentType: 'application/json', data: JSON.stringify({ description: val }) });
+      const idx = this.tickets.findIndex(t => t.id == id);
+      if (idx >= 0) this.tickets[idx] = updated;
+      this.ticketDetail = updated;
+      this.renderDescription(id);
+    } catch (e) { console.error(e); alert('Error saving description: ' + (e.responseJSON?.error || e.statusText)); }
+  },
+
   relDate(d) {
     if (!d) return '';
     try { return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch(e) { return d; }
