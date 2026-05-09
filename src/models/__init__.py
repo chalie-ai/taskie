@@ -23,3 +23,4 @@ from src.models.activity_log import ActivityLog
 TicketHistory = ActivityLog
 from src.models.user import User
 from src.models.attachment import Attachment
+from src.models.folder import Folder
