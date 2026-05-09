@@ -1,5 +1,5 @@
 from flask import g, has_request_context
-from src.models import Ticket, TicketHistory, db
+from src.models import db, ActivityLog, Ticket
 
 
 class HistoryService:
@@ -19,18 +19,38 @@ class HistoryService:
         return (name or 'System', uid)
 
     @staticmethod
-    def log(ticket_id, field_name, old_value=None, new_value=None,
-            author_name=None, user_id=None):
-        """Persist an activity entry. Pass field_name='comment_added',
-        'pr_linked', 'relationship_added', etc. for non-field events."""
+    def log(entity_type_or_ticket_id=None, field_name=None, old_value=None,
+            new_value=None, author_name=None, user_id=None,
+            entity_type=None, entity_id=None):
+        """Persist an activity entry.
+
+        Two calling conventions are supported:
+
+        New (preferred):
+            log(entity_type='document', entity_id=42, field_name='saved', ...)
+
+        Legacy (compat shim — every existing service caller in src/services/
+        passes ticket_id positionally):
+            log(ticket_id, field_name, old, new[, author_name=, user_id=])
+
+        The shim sniffs which form was used by checking the ``entity_type``
+        kwarg: when omitted, the first positional arg is treated as a
+        ``ticket_id`` and ``entity_type`` defaults to ``'ticket'``. This
+        will be removed in v0.4.0 once callers migrate to the explicit form.
+        """
+        if entity_type is None:
+            # Legacy positional call: first arg is the ticket id.
+            entity_type = 'ticket'
+            entity_id = entity_type_or_ticket_id
         if author_name is None or user_id is None:
             actor_name, actor_id = HistoryService._actor()
             if author_name is None:
                 author_name = actor_name
             if user_id is None:
                 user_id = actor_id
-        h = TicketHistory(
-            ticket_id=ticket_id,
+        h = ActivityLog(
+            entity_type=entity_type,
+            entity_id=entity_id,
             author_name=author_name,
             field_name=field_name,
             old_value=str(old_value) if old_value is not None else None,
@@ -41,12 +61,22 @@ class HistoryService:
         return h
 
     @staticmethod
-    def get_ticket_history(ticket_id):
-        ticket = Ticket.query.get(ticket_id)
-        if not ticket:
-            return None
+    def list_for_entity(entity_type, entity_id):
+        """Polymorphic lookup. Returns serialized rows in chronological order."""
+        rows = ActivityLog.query.filter_by(
+            entity_type=entity_type, entity_id=entity_id
+        ).order_by(ActivityLog.created_at).all()
         return [{
             'id': h.id, 'author_name': h.author_name,
             'field_name': h.field_name, 'old_value': h.old_value,
             'new_value': h.new_value, 'created_at': str(h.created_at),
-        } for h in ticket.history_entries]
+        } for h in rows]
+
+    # Compat alias: existing callers (routes/tickets.py, ticket_service.py)
+    # use get_ticket_history(ticket_id). Returns None when the ticket is
+    # missing so the route's 404 path keeps working.
+    @staticmethod
+    def get_ticket_history(ticket_id):
+        if db.session.get(Ticket, ticket_id) is None:
+            return None
+        return HistoryService.list_for_entity('ticket', ticket_id)

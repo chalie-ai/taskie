@@ -1,6 +1,6 @@
 from datetime import datetime
 from flask import g, current_app
-from src.models import db, Ticket, TicketHistory, TicketRelationship
+from src.models import db, Ticket, ActivityLog, TicketRelationship
 from src.services.relationship_service import RelationshipService
 from src.services.history_service import HistoryService
 
@@ -175,14 +175,17 @@ class TicketService:
         if not t:
             return False
         # Audit trail before the row is gone — comments/PR links cascade via the
-        # ORM relationship, but TicketHistory and TicketRelationship don't, so
-        # we clean those up explicitly to avoid FK constraint failures.
+        # ORM relationship, but ActivityLog (no FK to tickets) and
+        # TicketRelationship don't, so we clean those up explicitly to avoid
+        # orphaned audit rows / FK constraint failures.
         actor = getattr(g, 'user_id', None)
         current_app.logger.warning(
             "ticket_deleted ticket_id=%s display_id=%s name=%r actor_user_id=%s",
             t.id, t.display_id, t.name, actor,
         )
-        TicketHistory.query.filter_by(ticket_id=ticket_id).delete(synchronize_session=False)
+        ActivityLog.query.filter_by(
+            entity_type='ticket', entity_id=ticket_id
+        ).delete(synchronize_session=False)
         TicketRelationship.query.filter(
             db.or_(TicketRelationship.ticket_id == ticket_id,
                    TicketRelationship.related_ticket_id == ticket_id)
