@@ -12,6 +12,8 @@ def create_app():
     db.init_app(app)
     Migrate(app, db)
 
+    # Routes register lazily — query bodies fire on first request, after
+    # alembic_upgrade() below has applied any pending migrations.
     from src.routes import register_all
     register_all(app)
 

@@ -16,12 +16,12 @@ logger = logging.getLogger('alembic.env')
 
 
 def get_engine():
+    # Project pins flask-sqlalchemy>=3, so use the modern attribute directly.
+    # Falls back to the legacy method only if the attribute is missing.
     try:
-        # this works with Flask-SQLAlchemy<3 and Alchemical
-        return current_app.extensions['migrate'].db.get_engine()
-    except (TypeError, AttributeError):
-        # this works with Flask-SQLAlchemy>=3
         return current_app.extensions['migrate'].db.engine
+    except (TypeError, AttributeError):
+        return current_app.extensions['migrate'].db.get_engine()
 
 
 def get_engine_url():
