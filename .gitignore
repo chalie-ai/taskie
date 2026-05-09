@@ -44,6 +44,9 @@ anthropic.json
 # Superpowers generated specs
 docs/superpowers/
 
+# Worktrees (subagent-driven dev branches live here)
+.worktrees/
+
 # Docker
 docker-compose.override.yml
 
