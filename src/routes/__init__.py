@@ -9,6 +9,8 @@ def register_all(app):
     from src.routes.auth import auth_bp
     from src.routes.attachments import attachments_bp
     from src.routes.folders import folders_bp
+    from src.routes.documents import documents_bp
+    from src.routes.document_versions import document_versions_bp
 
     app.register_blueprint(cycles_bp, url_prefix='/api')
     app.register_blueprint(projects_bp, url_prefix='/api')
@@ -20,3 +22,5 @@ def register_all(app):
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(attachments_bp, url_prefix='/api')
     app.register_blueprint(folders_bp, url_prefix='/api')
+    app.register_blueprint(documents_bp, url_prefix='/api')
+    app.register_blueprint(document_versions_bp, url_prefix='/api')

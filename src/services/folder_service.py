@@ -1,5 +1,5 @@
 from flask import g, has_request_context
-from src.models import db, Folder
+from src.models import db, Folder, Document
 
 
 class FolderService:
@@ -128,12 +128,7 @@ class FolderService:
             return None
         has_children = (Folder.query.filter_by(parent_folder_id=folder_id).first()
                         is not None)
-        # TODO(task-5): drop the Document import guard once DocumentService lands.
-        import src.models as _models
-        Document = getattr(_models, 'Document', None)
-        has_docs = False
-        if Document is not None:
-            has_docs = Document.query.filter_by(folder_id=folder_id).first() is not None
+        has_docs = Document.query.filter_by(folder_id=folder_id).first() is not None
         if (has_children or has_docs) and not recursive:
             return 'non_empty'
         if recursive:
@@ -148,16 +143,12 @@ class FolderService:
 
     @staticmethod
     def _delete_recursive(folder_id):
-        """Depth-first cascade: child folders + their docs (when Documents exist), then this folder."""
+        """Depth-first cascade: child folders + their documents, then this folder."""
         for child in Folder.query.filter_by(parent_folder_id=folder_id).all():
             FolderService._delete_recursive(child.id)
-        # TODO(task-5): drop the Document import guard once DocumentService lands.
-        import src.models as _models
-        Document = getattr(_models, 'Document', None)
-        if Document is not None:
-            from src.services.document_service import DocumentService
-            for doc in Document.query.filter_by(folder_id=folder_id).all():
-                DocumentService.delete(doc.id)
+        from src.services.document_service import DocumentService
+        for doc in Document.query.filter_by(folder_id=folder_id).all():
+            DocumentService.delete(doc.id)
         f = Folder.query.get(folder_id)
         if f:
             db.session.delete(f)

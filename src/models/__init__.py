@@ -24,3 +24,5 @@ TicketHistory = ActivityLog
 from src.models.user import User
 from src.models.attachment import Attachment
 from src.models.folder import Folder
+from src.models.document_version import DocumentVersion
+from src.models.document import Document
