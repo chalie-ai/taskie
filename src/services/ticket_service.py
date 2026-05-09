@@ -119,7 +119,7 @@ class TicketService:
         )
         db.session.add(t)
         db.session.flush()
-        HistoryService.log(t.id, 'ticket_created', None, t.display_id)
+        HistoryService.log_ticket(t.id, 'ticket_created', None, t.display_id)
         db.session.commit()
         return TicketService.get_ticket(t.id)
 
@@ -153,7 +153,7 @@ class TicketService:
                 if str(old_val) != str(new_val):
                     setattr(t, field, new_val)
                     if field in loggable:
-                        HistoryService.log(ticket_id, field, old_val, new_val)
+                        HistoryService.log_ticket(ticket_id, field, old_val, new_val)
         db.session.commit()
         return TicketService.get_ticket(ticket_id)
 

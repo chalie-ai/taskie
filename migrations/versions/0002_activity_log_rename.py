@@ -13,9 +13,10 @@ alembic emulates it by rebuilding the table.
 
 The upgrade backfills existing rows with ``entity_type='ticket'`` and
 ``entity_id=ticket_id`` before dropping the legacy ``ticket_id`` column. The
-downgrade reverses the mapping for entity_type='ticket' rows; non-ticket
-rows (post-rename) cannot be represented in the old schema and would be
-lost — acceptable for a one-way refactor.
+downgrade refuses to run if any non-ticket rows exist (folder/document/etc.
+audit entries cannot round-trip into the legacy ticket-only schema). The
+operator must export or delete those rows manually before downgrading —
+silently destroying audit history is the wrong default.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -42,14 +43,22 @@ def upgrade():
 
 
 def downgrade():
+    # Refuse to downgrade if non-ticket audit rows exist — they cannot be
+    # represented in the old ticket-only schema and would be silently lost.
+    bind = op.get_bind()
+    non_ticket = bind.execute(sa.text(
+        "SELECT COUNT(*) FROM activity_log WHERE entity_type != 'ticket'"
+    )).scalar()
+    if non_ticket:
+        raise RuntimeError(
+            f"Refusing to downgrade: {non_ticket} non-ticket activity_log "
+            "rows would be lost. Export or delete them manually first, then "
+            "re-run the downgrade."
+        )
     with op.batch_alter_table('activity_log') as batch:
         batch.drop_index('ix_activity_log_entity')
         batch.add_column(sa.Column('ticket_id', sa.Integer(), nullable=True))
     op.execute("UPDATE activity_log SET ticket_id=entity_id WHERE entity_type='ticket'")
-    # Drop rows that can't round-trip back to the ticket-only schema before
-    # we tighten ticket_id to NOT NULL. Without this, batch rebuild would
-    # fail when copying NULLs into a NOT NULL column.
-    op.execute("DELETE FROM activity_log WHERE ticket_id IS NULL")
     with op.batch_alter_table('activity_log') as batch:
         batch.alter_column('ticket_id', nullable=False, existing_type=sa.Integer())
         batch.drop_column('entity_type')

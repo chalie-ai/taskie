@@ -26,7 +26,7 @@ class PRLinkService:
             status=data.get('status', 'open'),
         )
         db.session.add(pr)
-        HistoryService.log(ticket_id, 'pr_linked', None, pr.title or pr.url)
+        HistoryService.log_ticket(ticket_id, 'pr_linked', None, pr.title or pr.url)
         db.session.commit()
         return {'id': pr.id, 'url': pr.url, 'title': pr.title,
                 'status': pr.status, 'created_at': str(pr.created_at)}
@@ -36,7 +36,7 @@ class PRLinkService:
         pr = PRLink.query.get(pr_id)
         if not pr:
             return False
-        HistoryService.log(pr.ticket_id, 'pr_removed', pr.title or pr.url, None)
+        HistoryService.log_ticket(pr.ticket_id, 'pr_removed', pr.title or pr.url, None)
         db.session.delete(pr)
         db.session.commit()
         return True

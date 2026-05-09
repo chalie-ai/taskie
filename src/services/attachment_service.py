@@ -92,7 +92,7 @@ class AttachmentService:
         )
         db.session.add(a)
         db.session.flush()
-        HistoryService.log(ticket_id, 'attachment_added', None, original)
+        HistoryService.log_ticket(ticket_id, 'attachment_added', None, original)
         db.session.commit()
         return AttachmentService._serialize(a)
 
@@ -114,7 +114,7 @@ class AttachmentService:
         filename = a.filename
         # Delete the row first; if the unlink fails (file already gone, perms),
         # we still want the row removed so the UI doesn't list a dangling entry.
-        HistoryService.log(ticket_id, 'attachment_removed', filename, None)
+        HistoryService.log_ticket(ticket_id, 'attachment_removed', filename, None)
         db.session.delete(a)
         db.session.commit()
         try:

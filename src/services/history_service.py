@@ -19,29 +19,15 @@ class HistoryService:
         return (name or 'System', uid)
 
     @staticmethod
-    def log(entity_type_or_ticket_id=None, field_name=None, old_value=None,
-            new_value=None, author_name=None, user_id=None,
-            entity_type=None, entity_id=None):
-        """Persist an activity entry.
-
-        Two calling conventions are supported:
-
-        New (preferred):
-            log(entity_type='document', entity_id=42, field_name='saved', ...)
-
-        Legacy (compat shim — every existing service caller in src/services/
-        passes ticket_id positionally):
-            log(ticket_id, field_name, old, new[, author_name=, user_id=])
-
-        The shim sniffs which form was used by checking the ``entity_type``
-        kwarg: when omitted, the first positional arg is treated as a
-        ``ticket_id`` and ``entity_type`` defaults to ``'ticket'``. This
-        will be removed in v0.4.0 once callers migrate to the explicit form.
-        """
-        if entity_type is None:
-            # Legacy positional call: first arg is the ticket id.
-            entity_type = 'ticket'
-            entity_id = entity_type_or_ticket_id
+    def log(entity_type, entity_id, field_name, old_value=None, new_value=None,
+            author_name=None, user_id=None):
+        """Persist a polymorphic activity entry. Both ``entity_type`` and
+        ``entity_id`` are required; pass them by name or positionally."""
+        if entity_type is None or entity_id is None:
+            raise TypeError(
+                "HistoryService.log requires entity_type and entity_id; "
+                "for ticket audit entries use HistoryService.log_ticket()."
+            )
         if author_name is None or user_id is None:
             actor_name, actor_id = HistoryService._actor()
             if author_name is None:
@@ -59,6 +45,16 @@ class HistoryService:
         )
         db.session.add(h)
         return h
+
+    @staticmethod
+    def log_ticket(ticket_id, field_name, old_value=None, new_value=None,
+                   author_name=None, user_id=None):
+        """Convenience wrapper for ticket audit entries."""
+        return HistoryService.log(
+            'ticket', ticket_id, field_name,
+            old_value=old_value, new_value=new_value,
+            author_name=author_name, user_id=user_id,
+        )
 
     @staticmethod
     def list_for_entity(entity_type, entity_id):
