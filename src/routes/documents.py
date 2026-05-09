@@ -54,4 +54,4 @@ def delete_document(doc_id):
     res = DocumentService.delete(doc_id)
     if res is None:
         return jsonify({'error': 'Not found'}), 404
-    return jsonify({'deleted': True})
+    return ('', 204)

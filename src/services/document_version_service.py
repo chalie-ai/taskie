@@ -1,5 +1,6 @@
 from flask import g, has_request_context
 from src.models import db, Document, DocumentVersion
+from src.services.document_service import _slugify
 from sqlalchemy import func
 
 
@@ -17,6 +18,7 @@ class DocumentVersionService:
             'id': v.id,
             'document_id': v.document_id,
             'version_number': v.version_number,
+            'title': v.title,
             'body_md': v.body_md or '',
             'change_note': v.change_note,
             'created_at': str(v.created_at),
@@ -32,8 +34,8 @@ class DocumentVersionService:
         return [DocumentVersionService._serialize(v) for v in rows]
 
     @staticmethod
-    def get(version_id):
-        v = DocumentVersion.query.get(version_id)
+    def get(doc_id, version_id):
+        v = DocumentVersion.query.filter_by(id=version_id, document_id=doc_id).first()
         return DocumentVersionService._serialize(v) if v else None
 
     @staticmethod
@@ -41,6 +43,8 @@ class DocumentVersionService:
         d = Document.query.get(doc_id)
         if not d:
             return None
+
+        new_title = data.get('title', d.title)
 
         # Next version_number is max existing + 1 (handles post-rollback saves)
         max_num = (db.session.query(func.max(DocumentVersion.version_number))
@@ -51,6 +55,7 @@ class DocumentVersionService:
         v = DocumentVersion(
             document_id=doc_id,
             version_number=max_num + 1,
+            title=new_title,
             body_md=data.get('body_md', '') or '',
             change_note=data.get('change_note'),
             created_by=actor,
@@ -59,6 +64,8 @@ class DocumentVersionService:
         db.session.flush()
 
         d.current_version_id = v.id
+        d.title = new_title
+        d.slug = _slugify(new_title)
         d.updated_by = actor
 
         from src.services.history_service import HistoryService
@@ -70,7 +77,7 @@ class DocumentVersionService:
         return DocumentVersionService._serialize(v)
 
     @staticmethod
-    def rollback(doc_id, version_id):
+    def rollback(doc_id, version_id, change_note=None):
         d = Document.query.get(doc_id)
         if not d:
             return None
@@ -81,6 +88,8 @@ class DocumentVersionService:
             return None
 
         d.current_version_id = v.id
+        d.title = v.title
+        d.slug = _slugify(v.title)
         d.updated_by = DocumentVersionService._actor_id()
 
         from src.services.history_service import HistoryService

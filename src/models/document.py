@@ -6,6 +6,7 @@ class Document(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     title = db.Column(db.String(500), nullable=False)
+    slug = db.Column(db.String(300))
     space_type = db.Column(db.String(10), nullable=False)  # 'global' | 'project'
     project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=True)
     folder_id = db.Column(db.Integer, db.ForeignKey('folders.id'), nullable=True)
@@ -17,6 +18,7 @@ class Document(db.Model):
                       use_alter=True),
         nullable=True,
     )
+    sort_order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=utcnow)
     updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
@@ -41,4 +43,6 @@ class Document(db.Model):
             "(space_type = 'global' AND project_id IS NULL)",
             name='ck_document_space_consistency',
         ),
+        db.UniqueConstraint('folder_id', 'slug', 'space_type', 'project_id',
+                            name='uq_document_slug'),
     )

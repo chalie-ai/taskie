@@ -1,6 +1,13 @@
+import re
 import src.models as _models
 from flask import g, has_request_context
 from src.models import db, Document, DocumentVersion
+
+
+def _slugify(s):
+    s = (s or '').strip().lower()
+    s = re.sub(r'[^a-z0-9]+', '-', s).strip('-')
+    return s[:200] or 'untitled'
 
 
 class DocumentService:
@@ -18,6 +25,7 @@ class DocumentService:
         return {
             'id': v.id,
             'version_number': v.version_number,
+            'title': v.title,
             'body_md': v.body_md or '',
             'change_note': v.change_note,
             'created_at': str(v.created_at),
@@ -29,6 +37,8 @@ class DocumentService:
         return {
             'id': d.id,
             'title': d.title,
+            'slug': d.slug,
+            'sort_order': d.sort_order,
             'space_type': d.space_type,
             'project_id': d.project_id,
             'folder_id': d.folder_id,
@@ -41,7 +51,7 @@ class DocumentService:
         }
 
     @staticmethod
-    def list(space=None, project_id=None, folder_id=None):
+    def list(space=None, project_id=None, folder_id=None, tag=None, limit=None, offset=None):
         q = Document.query
         if space:
             q = q.filter(Document.space_type == space)
@@ -49,8 +59,20 @@ class DocumentService:
             q = q.filter(Document.project_id == project_id)
         if folder_id is not None:
             q = q.filter(Document.folder_id == folder_id)
-        return [DocumentService._serialize(d)
-                for d in q.order_by(Document.title).all()]
+        if tag:
+            Tag = getattr(_models, 'Tag', None)
+            DocumentTag = getattr(_models, 'DocumentTag', None)
+            if Tag is not None and DocumentTag is not None:
+                q = (q.join(DocumentTag, DocumentTag.document_id == Document.id)
+                      .join(Tag, Tag.id == DocumentTag.tag_id)
+                      .filter(Tag.name == tag.lower()))
+            # else: tag filter is a no-op until Task 6 lands
+        q = q.order_by(Document.sort_order, Document.title)
+        if limit:
+            q = q.limit(limit)
+        if offset:
+            q = q.offset(offset)
+        return [DocumentService._serialize(d) for d in q.all()]
 
     @staticmethod
     def get(doc_id):
@@ -103,6 +125,8 @@ class DocumentService:
         actor = DocumentService._actor_id()
         d = Document(
             title=title,
+            slug=_slugify(title),
+            sort_order=data.get('sort_order', 0),
             space_type=space,
             project_id=project_id,
             folder_id=data.get('folder_id'),
@@ -116,6 +140,7 @@ class DocumentService:
         v1 = DocumentVersion(
             document_id=d.id,
             version_number=1,
+            title=title,
             body_md=data.get('body_md', '') or '',
             change_note=data.get('change_note'),
             created_by=actor,
@@ -139,7 +164,7 @@ class DocumentService:
             pass
 
         db.session.commit()
-        return DocumentService._serialize(d)
+        return DocumentService.get(d.id)
 
     @staticmethod
     def update_metadata(doc_id, data):
@@ -153,6 +178,7 @@ class DocumentService:
         if 'title' in data and data['title'] != d.title:
             old_val = d.title
             d.title = data['title']
+            d.slug = _slugify(data['title'])
             HistoryService.log(entity_type='document', entity_id=d.id,
                                field_name='title', old_value=old_val,
                                new_value=data['title'])
@@ -164,6 +190,14 @@ class DocumentService:
             HistoryService.log(entity_type='document', entity_id=d.id,
                                field_name='folder_id', old_value=old_val,
                                new_value=data['folder_id'])
+            changed = True
+
+        if 'sort_order' in data and data['sort_order'] != d.sort_order:
+            old_val = d.sort_order
+            d.sort_order = data['sort_order']
+            HistoryService.log(entity_type='document', entity_id=d.id,
+                               field_name='sort_order', old_value=old_val,
+                               new_value=data['sort_order'])
             changed = True
 
         # TODO(task-6): drop guard once tag_service lands
@@ -203,6 +237,8 @@ class DocumentService:
         if Attachment is not None and hasattr(Attachment, 'document_id'):
             Attachment.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
 
+        title = d.title  # capture before delete
+
         # Versions cascade via ORM relationship (cascade='all, delete-orphan'),
         # but we must clear current_version_id first to avoid FK conflict when
         # SQLite enforces the use_alter FK.
@@ -210,5 +246,10 @@ class DocumentService:
         db.session.flush()
         DocumentVersion.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
         db.session.delete(d)
+
+        from src.services.history_service import HistoryService
+        HistoryService.log(entity_type='document', entity_id=doc_id,
+                           field_name='document_deleted', old_value=title)
+
         db.session.commit()
         return True

@@ -15,6 +15,8 @@ def list_versions(doc_id):
 @require_auth
 def save_version(doc_id):
     data = request.get_json() or {}
+    if 'body_md' not in data:
+        return jsonify({'error': 'body_md is required'}), 400
     res = DocumentVersionService.save(doc_id, data)
     if res is None:
         return jsonify({'error': 'Not found'}), 404
@@ -24,8 +26,8 @@ def save_version(doc_id):
 @document_versions_bp.route('/documents/<int:doc_id>/versions/<int:version_id>', methods=['GET'])
 @optional_auth
 def get_version(doc_id, version_id):
-    v = DocumentVersionService.get(version_id)
-    if not v or v['document_id'] != doc_id:
+    v = DocumentVersionService.get(doc_id, version_id)
+    if not v:
         return jsonify({'error': 'Not found'}), 404
     return jsonify(v)
 
@@ -37,7 +39,7 @@ def rollback(doc_id):
     version_id = data.get('version_id')
     if not version_id:
         return jsonify({'error': 'version_id is required'}), 400
-    res = DocumentVersionService.rollback(doc_id, version_id)
+    res = DocumentVersionService.rollback(doc_id, version_id, change_note=data.get('change_note'))
     if res is None:
         return jsonify({'error': 'Not found'}), 404
     return jsonify(res)

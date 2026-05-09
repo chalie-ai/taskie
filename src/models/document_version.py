@@ -5,8 +5,13 @@ class DocumentVersion(db.Model):
     __tablename__ = 'document_versions'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
+    document_id = db.Column(
+        db.Integer,
+        db.ForeignKey('documents.id', ondelete='CASCADE'),
+        nullable=False,
+    )
     version_number = db.Column(db.Integer, nullable=False)
+    title = db.Column(db.String(300), nullable=False)
     body_md = db.Column(db.Text, default='')
     change_note = db.Column(db.String(500))
     created_at = db.Column(db.DateTime, default=utcnow)
