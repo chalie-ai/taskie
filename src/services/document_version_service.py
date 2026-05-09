@@ -93,9 +93,12 @@ class DocumentVersionService:
         d.updated_by = DocumentVersionService._actor_id()
 
         from src.services.history_service import HistoryService
+        log_value = f'v{v.version_number}'
+        if change_note:
+            log_value = f'{log_value}: {change_note}'
         HistoryService.log(entity_type='document', entity_id=doc_id,
                            field_name='version_rollback',
-                           new_value=str(v.version_number))
+                           new_value=log_value)
 
         db.session.commit()
         return DocumentVersionService._serialize(v)

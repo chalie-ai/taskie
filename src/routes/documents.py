@@ -12,6 +12,9 @@ def list_documents():
         space=request.args.get('space'),
         project_id=request.args.get('project_id', type=int),
         folder_id=request.args.get('folder_id', type=int),
+        tag=request.args.get('tag'),
+        limit=request.args.get('limit', type=int),
+        offset=request.args.get('offset', type=int),
     ))
 
 

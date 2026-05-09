@@ -103,3 +103,21 @@ def test_version_get_validates_ownership(db):
     # Asking for doc B's version using doc A's version id → None
     res = DocumentVersionService.get(b['id'], a_v1)
     assert res is None
+
+
+def test_rollback_change_note_in_activity_log(db):
+    from src.services.document_service import DocumentService
+    from src.services.document_version_service import DocumentVersionService
+    from src.models import ActivityLog
+    doc = DocumentService.create({'title': 't', 'space_type': 'global',
+                                  'body_md': 'v1'})
+    v1_id = doc['current_version_id']
+    DocumentVersionService.save(doc['id'], {'body_md': 'v2'})
+    DocumentVersionService.rollback(doc['id'], v1_id,
+                                    change_note='accidental v2')
+    row = (ActivityLog.query
+           .filter_by(entity_type='document', entity_id=doc['id'],
+                      field_name='version_rollback')
+           .order_by(ActivityLog.id.desc()).first())
+    assert row is not None
+    assert 'accidental v2' in (row.new_value or '')
