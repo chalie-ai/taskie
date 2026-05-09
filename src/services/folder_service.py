@@ -100,8 +100,8 @@ class FolderService:
                     return {'error': 'parent chain references a missing folder; refuse to reparent'}
                 cur = row.parent_folder_id
             old_val = f.parent_folder_id
-            f.parent_folder_id = new_parent
             if str(old_val) != str(new_parent):
+                f.parent_folder_id = new_parent
                 HistoryService.log(entity_type='folder', entity_id=f.id,
                                    field_name='parent_folder_id',
                                    old_value=old_val, new_value=new_parent)
