@@ -60,3 +60,77 @@ def test_rest_create_folder(client, auth_headers):
 def test_rest_list_folders_unauthed_ok(client, db):
     resp = client.get('/api/folders?space=global')
     assert resp.status_code == 200
+
+
+def test_create_rejects_nonexistent_parent(db):
+    from src.services.folder_service import FolderService
+    res = FolderService.create({
+        'name': 'X', 'space_type': 'global', 'parent_folder_id': 99999,
+    })
+    assert 'error' in res and 'not found' in res['error'].lower()
+
+
+def test_create_rejects_cross_space_parent(db):
+    from src.services.folder_service import FolderService
+    from src.models import Project, db as _db
+    p = Project(name='Taskie')
+    _db.session.add(p)
+    _db.session.flush()
+    proj_root = FolderService.create({
+        'name': 'ProjRoot', 'space_type': 'project', 'project_id': p.id,
+    })
+    res = FolderService.create({
+        'name': 'GlobalChildOfProj', 'space_type': 'global',
+        'parent_folder_id': proj_root['id'],
+    })
+    assert 'error' in res and 'different space' in res['error'].lower()
+
+
+def test_update_rejects_cross_space_reparent(db):
+    from src.services.folder_service import FolderService
+    from src.models import Project, db as _db
+    p = Project(name='Taskie')
+    _db.session.add(p)
+    _db.session.flush()
+    g_folder = FolderService.create({'name': 'G', 'space_type': 'global'})
+    p_folder = FolderService.create({
+        'name': 'P', 'space_type': 'project', 'project_id': p.id,
+    })
+    res = FolderService.update(g_folder['id'],
+                               {'parent_folder_id': p_folder['id']})
+    assert 'error' in res and 'different space' in res['error'].lower()
+
+
+def test_update_rejects_nonexistent_parent(db):
+    from src.services.folder_service import FolderService
+    f = FolderService.create({'name': 'A', 'space_type': 'global'})
+    res = FolderService.update(f['id'], {'parent_folder_id': 99999})
+    assert 'error' in res and 'not found' in res['error'].lower()
+
+
+def test_update_noop_does_not_write_activity_log(db):
+    from src.services.folder_service import FolderService
+    from src.models import ActivityLog
+    f = FolderService.create({'name': 'A', 'space_type': 'global'})
+    before = ActivityLog.query.filter_by(
+        entity_type='folder', entity_id=f['id']
+    ).count()
+    # PATCH with the same values — no fields actually change
+    FolderService.update(f['id'], {'name': 'A', 'sort_order': 0})
+    after = ActivityLog.query.filter_by(
+        entity_type='folder', entity_id=f['id']
+    ).count()
+    assert after == before  # no per-field change → no log entry
+
+
+def test_update_logs_per_changed_field(db):
+    from src.services.folder_service import FolderService
+    from src.models import ActivityLog
+    f = FolderService.create({'name': 'A', 'space_type': 'global'})
+    FolderService.update(f['id'], {'name': 'B', 'sort_order': 5})
+    rows = ActivityLog.query.filter_by(
+        entity_type='folder', entity_id=f['id']
+    ).all()
+    fields = sorted(r.field_name for r in rows)
+    # 'folder_created' from create + 'name' + 'sort_order' from update
+    assert 'name' in fields and 'sort_order' in fields
