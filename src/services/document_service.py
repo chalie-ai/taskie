@@ -1,7 +1,8 @@
 import re
 import src.models as _models
 from flask import g, has_request_context
-from src.models import db, Document, DocumentVersion
+from sqlalchemy.orm import joinedload
+from src.models import db, Document, DocumentVersion, Folder
 
 
 def _slugify(s):
@@ -52,7 +53,7 @@ class DocumentService:
 
     @staticmethod
     def list(space=None, project_id=None, folder_id=None, tag=None, limit=None, offset=None):
-        q = Document.query
+        q = Document.query.options(joinedload(Document.current_version))
         if space:
             q = q.filter(Document.space_type == space)
         if project_id is not None:
@@ -68,9 +69,9 @@ class DocumentService:
                       .filter(Tag.name == tag.lower()))
             # else: tag filter is a no-op until Task 6 lands
         q = q.order_by(Document.sort_order, Document.title)
-        if limit:
+        if limit is not None:
             q = q.limit(limit)
-        if offset:
+        if offset is not None:
             q = q.offset(offset)
         return [DocumentService._serialize(d) for d in q.all()]
 
@@ -122,6 +123,14 @@ class DocumentService:
         if not title:
             return {'error': 'title is required'}
 
+        folder_id = data.get('folder_id')
+        if folder_id is not None:
+            folder = Folder.query.get(folder_id)
+            if not folder:
+                return {'error': 'folder_id not found'}
+            if folder.space_type != space or folder.project_id != project_id:
+                return {'error': 'folder_id is in a different space'}
+
         actor = DocumentService._actor_id()
         d = Document(
             title=title,
@@ -129,7 +138,7 @@ class DocumentService:
             sort_order=data.get('sort_order', 0),
             space_type=space,
             project_id=project_id,
-            folder_id=data.get('folder_id'),
+            folder_id=folder_id,
             created_by=actor,
             updated_by=actor,
         )
@@ -185,11 +194,18 @@ class DocumentService:
             changed = True
 
         if 'folder_id' in data and data['folder_id'] != d.folder_id:
+            new_folder_id = data['folder_id']
+            if new_folder_id is not None:
+                folder = Folder.query.get(new_folder_id)
+                if not folder:
+                    return {'error': 'folder_id not found'}
+                if folder.space_type != d.space_type or folder.project_id != d.project_id:
+                    return {'error': 'folder_id is in a different space'}
             old_val = d.folder_id
-            d.folder_id = data['folder_id']
+            d.folder_id = new_folder_id
             HistoryService.log(entity_type='document', entity_id=d.id,
                                field_name='folder_id', old_value=old_val,
-                               new_value=data['folder_id'])
+                               new_value=new_folder_id)
             changed = True
 
         if 'sort_order' in data and data['sort_order'] != d.sort_order:
@@ -207,15 +223,15 @@ class DocumentService:
                 TagService.set_for_document(doc_id, data['tags'])
                 changed = True
             except ImportError:
-                # Tag service not available yet; mark changed so caller
-                # knows the request was accepted.
-                changed = True
+                # TagService not available yet — accept the request silently
+                # but do not stamp updated_by/updated_at for a no-op.
+                pass
 
         if changed:
             d.updated_by = DocumentService._actor_id()
 
         db.session.commit()
-        return DocumentService._serialize(d)
+        return DocumentService.get(doc_id)
 
     @staticmethod
     def delete(doc_id):

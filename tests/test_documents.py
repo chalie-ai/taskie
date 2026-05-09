@@ -130,3 +130,44 @@ def test_list_pagination_limit_offset(db):
     page = DocumentService.list(space='global', limit=2, offset=2)
     assert len(page) == 2
     assert [d['title'] for d in page] == ['t2', 't3']
+
+
+def test_create_rejects_folder_in_different_space(db):
+    from src.services.document_service import DocumentService
+    from src.services.folder_service import FolderService
+    from src.models import Project, db as _db
+    p = Project(name='Other')
+    _db.session.add(p); _db.session.flush()
+    proj_folder = FolderService.create({
+        'name': 'pf', 'space_type': 'project', 'project_id': p.id,
+    })
+    res = DocumentService.create({
+        'title': 't', 'space_type': 'global', 'folder_id': proj_folder['id'],
+    })
+    assert 'error' in res
+
+
+def test_update_metadata_rejects_folder_in_different_space(db):
+    from src.services.document_service import DocumentService
+    from src.services.folder_service import FolderService
+    from src.models import Project, db as _db
+    p = Project(name='Other')
+    _db.session.add(p); _db.session.flush()
+    proj_folder = FolderService.create({
+        'name': 'pf', 'space_type': 'project', 'project_id': p.id,
+    })
+    doc = DocumentService.create({'title': 't', 'space_type': 'global'})
+    res = DocumentService.update_metadata(doc['id'], {
+        'folder_id': proj_folder['id'],
+    })
+    assert isinstance(res, dict) and 'error' in res
+
+
+def test_update_metadata_returns_full_document_shape(db):
+    from src.services.document_service import DocumentService
+    doc = DocumentService.create({'title': 'a', 'space_type': 'global'})
+    res = DocumentService.update_metadata(doc['id'], {'title': 'b'})
+    # Full shape includes tags/linked_ticket_ids/attachments (parity with get).
+    assert 'tags' in res
+    assert 'linked_ticket_ids' in res
+    assert 'attachments' in res
