@@ -1,0 +1,3 @@
+Single-database configuration for Flask.
+
+**Existing installs upgrading from < v0.3.0**: run `flask db stamp 0001_baseline` once to mark the existing schema as alembic-managed. After that, `flask db upgrade` (called automatically on app start) will apply new migrations.

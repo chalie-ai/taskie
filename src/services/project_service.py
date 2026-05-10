@@ -1,4 +1,4 @@
-from src.models import db, Project, CycleProject, Ticket
+from src.models import db, Project, CycleProject, Ticket, Document, Folder
 
 
 class ProjectService:
@@ -59,6 +59,33 @@ class ProjectService:
         p = db.session.get(Project, project_id)
         if not p:
             return False
+
+        # Tear down docs content first so FTS index and on-disk attachment files
+        # are cleaned up. DocumentService.delete handles: document_tags,
+        # document_ticket_links, attachment file removal, FTS5 deindex, and all
+        # versions. Each call commits internally — that is intentional so every
+        # document is fully torn down and its disk files removed before we move on.
+        from src.services.document_service import DocumentService
+        for doc in Document.query.filter_by(
+            space_type='project', project_id=project_id
+        ).all():
+            DocumentService.delete(doc.id)
+
+        # Delete root folders recursively. FolderService._delete_recursive handles
+        # child folders and their documents depth-first; since we already deleted
+        # all documents above, the recursive calls hit empty folders and just
+        # remove them. The history log entry is written inside FolderService.delete.
+        from src.services.folder_service import FolderService
+        for folder in Folder.query.filter_by(
+            space_type='project', project_id=project_id, parent_folder_id=None
+        ).all():
+            FolderService.delete(folder.id, recursive=True)
+
+        # NOTE: project-scoped tickets and their attachments are also orphaned
+        # when a project is deleted under SQLite (PRAGMA foreign_keys=OFF). That
+        # is a pre-existing gap not introduced by the docs feature — ticket cascade
+        # cleanup is tracked separately and is not changed here.
+
         db.session.delete(p)
         db.session.commit()
         return True

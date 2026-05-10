@@ -1,0 +1,291 @@
+import os
+import re
+from flask import current_app, g, has_request_context
+from sqlalchemy.orm import joinedload
+from src.models import db, Document, DocumentVersion, Folder
+
+
+def _slugify(s):
+    s = (s or '').strip().lower()
+    s = re.sub(r'[^a-z0-9]+', '-', s).strip('-')
+    return s[:200] or 'untitled'
+
+
+class DocumentService:
+
+    @staticmethod
+    def _actor_id():
+        if has_request_context():
+            return getattr(g, 'user_id', None)
+        return None
+
+    @staticmethod
+    def _serialize_version(v):
+        if v is None:
+            return None
+        return {
+            'id': v.id,
+            'version_number': v.version_number,
+            'title': v.title,
+            'body_md': v.body_md or '',
+            'change_note': v.change_note,
+            'created_at': str(v.created_at),
+            'created_by': v.created_by,
+        }
+
+    @staticmethod
+    def _serialize(d):
+        return {
+            'id': d.id,
+            'title': d.title,
+            'slug': d.slug,
+            'sort_order': d.sort_order,
+            'space_type': d.space_type,
+            'project_id': d.project_id,
+            'folder_id': d.folder_id,
+            'current_version_id': d.current_version_id,
+            'current_version': DocumentService._serialize_version(d.current_version),
+            'created_at': str(d.created_at),
+            'updated_at': str(d.updated_at),
+            'created_by': d.created_by,
+            'updated_by': d.updated_by,
+        }
+
+    @staticmethod
+    def list(space=None, project_id=None, folder_id=None, tag=None, limit=None, offset=None):
+        q = Document.query.options(joinedload(Document.current_version))
+        if space:
+            q = q.filter(Document.space_type == space)
+        if project_id is not None:
+            q = q.filter(Document.project_id == project_id)
+        if folder_id is not None:
+            q = q.filter(Document.folder_id == folder_id)
+        if tag:
+            from src.models import Tag, DocumentTag
+            q = (q.join(DocumentTag, DocumentTag.document_id == Document.id)
+                  .join(Tag, Tag.id == DocumentTag.tag_id)
+                  .filter(Tag.name == tag.lower()))
+        q = q.order_by(Document.sort_order, Document.title)
+        if limit is not None:
+            q = q.limit(limit)
+        if offset is not None:
+            q = q.offset(offset)
+        return [DocumentService._serialize(d) for d in q.all()]
+
+    @staticmethod
+    def get(doc_id):
+        d = Document.query.get(doc_id)
+        if not d:
+            return None
+        out = DocumentService._serialize(d)
+
+        from src.services.tag_service import TagService
+        out['tags'] = TagService.list_for_document(doc_id)
+
+        from src.services.document_link_service import DocumentLinkService
+        out['linked_ticket_ids'] = DocumentLinkService.list_ticket_ids(doc_id)
+
+        from src.services.attachment_service import AttachmentService
+        out['attachments'] = AttachmentService.list_for_document(doc_id) or []
+        return out
+
+    @staticmethod
+    def create(data):
+        space = data.get('space_type')
+        project_id = data.get('project_id')
+        if space not in ('global', 'project'):
+            return {'error': "space_type must be 'global' or 'project'"}
+        if space == 'project' and not project_id:
+            return {'error': 'project_id required when space_type=project'}
+        if space == 'global' and project_id:
+            return {'error': 'project_id must be null when space_type=global'}
+        title = data.get('title', '').strip()
+        if not title:
+            return {'error': 'title is required'}
+
+        folder_id = data.get('folder_id')
+        if folder_id is not None:
+            folder = Folder.query.get(folder_id)
+            if not folder:
+                return {'error': 'folder_id not found'}
+            if folder.space_type != space or folder.project_id != project_id:
+                return {'error': 'folder_id is in a different space'}
+
+        actor = DocumentService._actor_id()
+        d = Document(
+            title=title,
+            slug=_slugify(title),
+            sort_order=data.get('sort_order', 0),
+            space_type=space,
+            project_id=project_id,
+            folder_id=folder_id,
+            created_by=actor,
+            updated_by=actor,
+        )
+        db.session.add(d)
+        db.session.flush()  # get d.id
+
+        # Create the initial version (v1)
+        v1 = DocumentVersion(
+            document_id=d.id,
+            version_number=1,
+            title=title,
+            body_md=data.get('body_md', '') or '',
+            change_note=data.get('change_note'),
+            created_by=actor,
+        )
+        db.session.add(v1)
+        db.session.flush()  # get v1.id
+
+        d.current_version_id = v1.id
+        db.session.flush()
+
+        from src.services.history_service import HistoryService
+        HistoryService.log(entity_type='document', entity_id=d.id,
+                           field_name='document_created', new_value=title)
+
+        from src.services.tag_service import TagService
+        for name in data.get('tags', []) or []:
+            TagService.attach(d.id, name)
+
+        db.session.commit()
+
+        # Reindex after commit so FTS always reflects durable state.
+        # Wrapped in try/except so a search-side failure (FTS5 corruption,
+        # transient I/O error, etc.) never prevents a document write from
+        # succeeding. Search going stale is recoverable; losing a write is not.
+        try:
+            from src.services.document_search_service import DocumentSearchService
+            DocumentSearchService.reindex_document(d.id)
+        except Exception:
+            if has_request_context():
+                current_app.logger.warning(
+                    "reindex_document failed after create doc_id=%s", d.id
+                )
+
+        return DocumentService.get(d.id)
+
+    @staticmethod
+    def update_metadata(doc_id, data):
+        d = Document.query.get(doc_id)
+        if not d:
+            return None
+
+        from src.services.history_service import HistoryService
+        changed = False
+
+        if 'title' in data and data['title'] != d.title:
+            old_val = d.title
+            d.title = data['title']
+            d.slug = _slugify(data['title'])
+            HistoryService.log(entity_type='document', entity_id=d.id,
+                               field_name='title', old_value=old_val,
+                               new_value=data['title'])
+            changed = True
+
+        if 'folder_id' in data and data['folder_id'] != d.folder_id:
+            new_folder_id = data['folder_id']
+            if new_folder_id is not None:
+                folder = Folder.query.get(new_folder_id)
+                if not folder:
+                    return {'error': 'folder_id not found'}
+                if folder.space_type != d.space_type or folder.project_id != d.project_id:
+                    return {'error': 'folder_id is in a different space'}
+            old_val = d.folder_id
+            d.folder_id = new_folder_id
+            HistoryService.log(entity_type='document', entity_id=d.id,
+                               field_name='folder_id', old_value=old_val,
+                               new_value=new_folder_id)
+            changed = True
+
+        if 'sort_order' in data and data['sort_order'] != d.sort_order:
+            old_val = d.sort_order
+            d.sort_order = data['sort_order']
+            HistoryService.log(entity_type='document', entity_id=d.id,
+                               field_name='sort_order', old_value=old_val,
+                               new_value=data['sort_order'])
+            changed = True
+
+        if 'tags' in data:
+            from src.services.tag_service import TagService
+            TagService.set_for_document(doc_id, data['tags'])
+            changed = True
+
+        if changed:
+            d.updated_by = DocumentService._actor_id()
+
+        db.session.commit()
+
+        # Reindex after commit — search degradation must never block a write.
+        try:
+            from src.services.document_search_service import DocumentSearchService
+            DocumentSearchService.reindex_document(doc_id)
+        except Exception:
+            if has_request_context():
+                current_app.logger.warning(
+                    "reindex_document failed after update_metadata doc_id=%s", doc_id
+                )
+
+        return DocumentService.get(doc_id)
+
+    @staticmethod
+    def delete(doc_id):
+        d = Document.query.get(doc_id)
+        if not d:
+            return None
+
+        from src.models import DocumentTag, DocumentTicketLink, Attachment
+        from src.services.attachment_service import AttachmentService
+
+        DocumentTag.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
+        DocumentTicketLink.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
+
+        # Capture full paths BEFORE the bulk delete so we can remove them from
+        # disk after the DB commit succeeds. Never touch the filesystem before
+        # the transaction is durably committed.
+        attachment_paths = [
+            AttachmentService.storage_full_path(a)
+            for a in Attachment.query.filter_by(document_id=doc_id).all()
+        ]
+        Attachment.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
+
+        title = d.title  # capture before delete
+
+        # Versions cascade via ORM relationship (cascade='all, delete-orphan'),
+        # but we must clear current_version_id first to avoid FK conflict when
+        # SQLite enforces the use_alter FK.
+        d.current_version_id = None
+        db.session.flush()
+        DocumentVersion.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
+        db.session.delete(d)
+
+        from src.services.history_service import HistoryService
+        HistoryService.log(entity_type='document', entity_id=doc_id,
+                           field_name='document_deleted', old_value=title)
+
+        db.session.commit()
+
+        # Remove the document from the FTS index now that the row is gone.
+        # Wrapped in try/except — search degradation must never block a write.
+        try:
+            from src.services.document_search_service import DocumentSearchService
+            DocumentSearchService._delete_index(doc_id)
+        except Exception:
+            if has_request_context():
+                current_app.logger.warning(
+                    "reindex (delete) failed after delete doc_id=%s", doc_id
+                )
+
+        # Remove attachment files from disk after the transaction is committed.
+        # Best-effort: log failures but never let a missing file abort the delete.
+        for path in attachment_paths:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError as e:
+                if has_request_context():
+                    current_app.logger.warning(
+                        "attachment file unlink failed path=%s err=%s", path, e
+                    )
+
+        return True

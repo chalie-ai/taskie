@@ -312,6 +312,314 @@ TOOL_DEFS = [
     ),
 ]
 
+TOOL_DEFS.extend([
+    # ── Folders ──
+    types.Tool(
+        name="list_folders",
+        description="List folders in a doc space (global or project).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "space": {"type": "string", "description": "'global' or 'project'"},
+                "project_id": {"type": "integer"},
+            },
+            "required": ["space"],
+        },
+    ),
+    types.Tool(
+        name="create_folder",
+        description="Create a folder in a doc space. Requires agent_token.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "name": {"type": "string"},
+                "space": {"type": "string"},
+                "project_id": {"type": "integer"},
+                "parent_folder_id": {"type": "integer"},
+            },
+            "required": ["agent_token", "name", "space"],
+        },
+    ),
+    types.Tool(
+        name="update_folder",
+        description="Rename, reparent, or reorder a folder. Requires agent_token.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "folder_id": {"type": "integer"},
+                "name": {"type": "string"},
+                "parent_folder_id": {"type": "integer"},
+                "sort_order": {"type": "integer"},
+            },
+            "required": ["agent_token", "folder_id"],
+        },
+    ),
+    types.Tool(
+        name="delete_folder",
+        description="Delete a folder. Pass recursive=true if non-empty. Requires agent_token.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "folder_id": {"type": "integer"},
+                "recursive": {"type": "boolean"},
+            },
+            "required": ["agent_token", "folder_id"],
+        },
+    ),
+    # ── Documents ──
+    types.Tool(
+        name="list_documents",
+        description="List documents with optional filters: space, project_id, folder_id, tag.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "space": {"type": "string"},
+                "project_id": {"type": "integer"},
+                "folder_id": {"type": "integer"},
+                "tag": {"type": "string"},
+                "limit": {"type": "integer"},
+                "offset": {"type": "integer"},
+            },
+        },
+    ),
+    types.Tool(
+        name="get_document",
+        description="Get full document details (title, current body, tags, links, attachments).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "document_id": {"type": "integer"},
+                "include_body": {"type": "boolean", "description": "Default true"},
+                "include_attachments": {"type": "boolean", "description": "Default false"},
+                "include_links": {"type": "boolean", "description": "Default false"},
+            },
+            "required": ["document_id"],
+        },
+    ),
+    types.Tool(
+        name="create_document",
+        description="Create a doc with v1 in one call. Requires agent_token.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "title": {"type": "string"},
+                "space": {"type": "string"},
+                "project_id": {"type": "integer"},
+                "folder_id": {"type": "integer"},
+                "body_md": {"type": "string"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "change_note": {"type": "string"},
+            },
+            "required": ["agent_token", "title", "space"],
+        },
+    ),
+    types.Tool(
+        name="update_document_metadata",
+        description="Update title, folder, or tags WITHOUT creating a new version. Requires agent_token.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "document_id": {"type": "integer"},
+                "title": {"type": "string"},
+                "folder_id": {"type": "integer"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["agent_token", "document_id"],
+        },
+    ),
+    types.Tool(
+        name="save_document",
+        description=(
+            "Save a new version of a doc. Creates a new version row and advances "
+            "the current pointer. Requires agent_token."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "document_id": {"type": "integer"},
+                "body_md": {"type": "string"},
+                "title": {"type": "string"},
+                "change_note": {"type": "string"},
+            },
+            "required": ["agent_token", "document_id", "body_md"],
+        },
+    ),
+    types.Tool(
+        name="delete_document",
+        description="Delete a doc and its versions, tags, links, attachments. Requires agent_token.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "document_id": {"type": "integer"},
+            },
+            "required": ["agent_token", "document_id"],
+        },
+    ),
+    types.Tool(
+        name="search_documents",
+        description="Full-text search over current doc bodies + titles + tags.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "q": {"type": "string"},
+                "space": {"type": "string"},
+                "project_id": {"type": "integer"},
+                "tag": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+            "required": ["q"],
+        },
+    ),
+    # ── Versions ──
+    types.Tool(
+        name="list_document_versions",
+        description="List version metadata for a doc.",
+        inputSchema={
+            "type": "object",
+            "properties": {"document_id": {"type": "integer"}},
+            "required": ["document_id"],
+        },
+    ),
+    types.Tool(
+        name="get_document_version",
+        description="Get the full body of a specific version.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "integer"},
+                "version_id": {"type": "integer"},
+            },
+            "required": ["document_id", "version_id"],
+        },
+    ),
+    types.Tool(
+        name="rollback_document",
+        description=(
+            "Restore a previous version (moves the current pointer; history is preserved). "
+            "Requires agent_token."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "document_id": {"type": "integer"},
+                "version_id": {"type": "integer"},
+                "change_note": {"type": "string"},
+            },
+            "required": ["agent_token", "document_id", "version_id"],
+        },
+    ),
+    # ── Tags ──
+    types.Tool(
+        name="list_tags",
+        description="List/autocomplete tags.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "q": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+        },
+    ),
+    types.Tool(
+        name="create_tag",
+        description="Explicit tag creation (usually unnecessary; created on first use).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "name": {"type": "string"},
+            },
+            "required": ["agent_token", "name"],
+        },
+    ),
+    types.Tool(
+        name="delete_tag",
+        description="Delete a tag globally.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "tag_id": {"type": "integer"},
+            },
+            "required": ["agent_token", "tag_id"],
+        },
+    ),
+    # ── Links ──
+    types.Tool(
+        name="link_document_to_ticket",
+        description="Link a doc to a ticket (bidirectional). Requires agent_token.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "document_id": {"type": "integer"},
+                "ticket_id": {"type": "integer"},
+            },
+            "required": ["agent_token", "document_id", "ticket_id"],
+        },
+    ),
+    types.Tool(
+        name="unlink_document_from_ticket",
+        description="Remove a doc-ticket link. Requires agent_token.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "document_id": {"type": "integer"},
+                "ticket_id": {"type": "integer"},
+            },
+            "required": ["agent_token", "document_id", "ticket_id"],
+        },
+    ),
+    types.Tool(
+        name="list_linked_tickets",
+        description="List ticket IDs linked to a doc.",
+        inputSchema={
+            "type": "object",
+            "properties": {"document_id": {"type": "integer"}},
+            "required": ["document_id"],
+        },
+    ),
+    # ── Attachments ──
+    types.Tool(
+        name="upload_document_attachment",
+        description=(
+            "Upload a file to a doc as an attachment. Provide a local file path. "
+            "Requires agent_token."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_token": {"type": "string"},
+                "document_id": {"type": "integer"},
+                "file_path": {"type": "string", "description": "Local path on the agent host"},
+                "filename": {"type": "string", "description": "Optional override of the filename"},
+            },
+            "required": ["agent_token", "document_id", "file_path"],
+        },
+    ),
+    types.Tool(
+        name="list_document_attachments",
+        description="List attachments on a doc.",
+        inputSchema={
+            "type": "object",
+            "properties": {"document_id": {"type": "integer"}},
+            "required": ["document_id"],
+        },
+    ),
+])
+
 
 def call_tool(name: str, arguments: dict) -> str:
     token = arguments.get('agent_token', '')
@@ -500,5 +808,202 @@ def call_tool(name: str, arguments: dict) -> str:
             r = client.delete(api_url(f'/tickets/{tid}/attachments/{aid}'))
             r.raise_for_status()
             return json.dumps({"deleted": True})
+
+        # ── Folders ──
+
+        elif name == "list_folders":
+            params = {k: v for k, v in arguments.items()
+                      if k in ('space', 'project_id') and v is not None}
+            r = client.get(api_url('/folders'), params=params)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "create_folder":
+            payload = {k: v for k, v in arguments.items()
+                       if k not in ('agent_token',) and v is not None}
+            if 'space' in payload:
+                payload['space_type'] = payload.pop('space')
+            r = client.post(api_url('/folders'), json=payload)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "update_folder":
+            fid = arguments['folder_id']
+            data = {k: v for k, v in arguments.items()
+                    if k in ('name', 'sort_order') and v is not None}
+            if 'parent_folder_id' in arguments:
+                data['parent_folder_id'] = arguments['parent_folder_id']  # None means "move to root"
+            r = client.patch(api_url(f'/folders/{fid}'), json=data)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "delete_folder":
+            fid = arguments['folder_id']
+            params = {}
+            if arguments.get('recursive'):
+                params['recursive'] = 'true'
+            r = client.delete(api_url(f'/folders/{fid}'), params=params)
+            r.raise_for_status()
+            return json.dumps({"deleted": True})
+
+        # ── Documents ──
+
+        elif name == "list_documents":
+            params = {k: v for k, v in arguments.items()
+                      if k in ('space', 'project_id', 'folder_id', 'tag', 'limit', 'offset')
+                      and v is not None}
+            r = client.get(api_url('/documents'), params=params)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "get_document":
+            did = arguments['document_id']
+            params = {k: v for k, v in arguments.items()
+                      if k in ('include_body', 'include_attachments', 'include_links')
+                      and v is not None}
+            r = client.get(api_url(f'/documents/{did}'), params=params)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "create_document":
+            payload = {k: v for k, v in arguments.items()
+                       if k != 'agent_token' and v is not None}
+            if 'space' in payload:
+                payload['space_type'] = payload.pop('space')
+            r = client.post(api_url('/documents'), json=payload)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "update_document_metadata":
+            did = arguments['document_id']
+            data = {k: v for k, v in arguments.items()
+                    if k in ('title', 'tags') and v is not None}
+            if 'folder_id' in arguments:
+                data['folder_id'] = arguments['folder_id']  # None means "move out of folder"
+            r = client.patch(api_url(f'/documents/{did}'), json=data)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "save_document":
+            did = arguments['document_id']
+            payload = {k: v for k, v in arguments.items()
+                       if k not in ('agent_token', 'document_id') and v is not None}
+            r = client.post(api_url(f'/documents/{did}/versions'), json=payload)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "delete_document":
+            did = arguments['document_id']
+            r = client.delete(api_url(f'/documents/{did}'))
+            r.raise_for_status()
+            return json.dumps({"deleted": True})
+
+        elif name == "search_documents":
+            params = {k: v for k, v in arguments.items()
+                      if k in ('q', 'space', 'project_id', 'tag', 'limit') and v is not None}
+            r = client.get(api_url('/documents/search'), params=params)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        # ── Versions ──
+
+        elif name == "list_document_versions":
+            did = arguments['document_id']
+            r = client.get(api_url(f'/documents/{did}/versions'))
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "get_document_version":
+            did = arguments['document_id']
+            vid = arguments['version_id']
+            r = client.get(api_url(f'/documents/{did}/versions/{vid}'))
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "rollback_document":
+            did = arguments['document_id']
+            payload = {k: v for k, v in arguments.items()
+                       if k in ('version_id', 'change_note') and v is not None}
+            r = client.post(api_url(f'/documents/{did}/rollback'), json=payload)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        # ── Tags ──
+
+        elif name == "list_tags":
+            params = {k: v for k, v in arguments.items()
+                      if k in ('q', 'limit') and v is not None}
+            r = client.get(api_url('/tags'), params=params)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "create_tag":
+            r = client.post(api_url('/tags'), json={'name': arguments['name']})
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "delete_tag":
+            tag_id = arguments['tag_id']
+            r = client.delete(api_url(f'/tags/{tag_id}'))
+            r.raise_for_status()
+            return json.dumps({"deleted": True})
+
+        # ── Links ──
+
+        elif name == "link_document_to_ticket":
+            did = arguments['document_id']
+            r = client.post(
+                api_url(f'/documents/{did}/tickets'),
+                json={'ticket_id': arguments['ticket_id']},
+            )
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "unlink_document_from_ticket":
+            did = arguments['document_id']
+            linked_tid = arguments['ticket_id']
+            r = client.delete(api_url(f'/documents/{did}/tickets/{linked_tid}'))
+            r.raise_for_status()
+            return json.dumps({"deleted": True})
+
+        elif name == "list_linked_tickets":
+            did = arguments['document_id']
+            # We reuse GET /documents/<id> rather than adding a dedicated endpoint —
+            # linked_ticket_ids is unconditionally populated and the response size is
+            # bounded in practice (no FTS body in the doc serializer; current_version
+            # bodies tend to be small enough that an extra round-trip per surface
+            # isn't worth a new REST endpoint).
+            r = client.get(api_url(f'/documents/{did}'))
+            r.raise_for_status()
+            doc = r.json()
+            return json.dumps(doc.get('linked_ticket_ids', []), indent=2)
+
+        # ── Attachments ──
+
+        elif name == "upload_document_attachment":
+            did = arguments['document_id']
+            file_path = arguments['file_path']
+            filename = arguments.get('filename') or os.path.basename(file_path)
+            if not filename:
+                return json.dumps({'error': 'Could not determine filename from file_path; pass an explicit filename'})
+            try:
+                fh = open(file_path, 'rb')
+            except OSError as e:
+                return json.dumps({'error': f'Cannot open file: {e}'})
+            with fh:
+                files = {'file': (filename, fh)}
+                r = client.post(api_url(f'/documents/{did}/attachments'), files=files)
+            if r.status_code >= 400:
+                try:
+                    return json.dumps(r.json())
+                except Exception:
+                    r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif name == "list_document_attachments":
+            did = arguments['document_id']
+            r = client.get(api_url(f'/documents/{did}/attachments'))
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
 
         return json.dumps({"error": f"Unknown tool: {name}"})

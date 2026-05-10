@@ -160,7 +160,11 @@ claude mcp list
 
 ## 4. Authenticate
 
-Every **write** tool (`create_ticket`, `update_ticket`, `add_comment`, `submit_pr_link`, `add_relationship`, `upload_attachment`, `delete_*`, `reorder_tickets`) requires an `agent_token`. Read tools (`list_tickets`, `get_ticket`, `list_comments`, `list_pr_links`, `list_relationships`, `list_attachments`, `get_ticket_history`, `get_stats`) do not.
+Every **write** tool requires an `agent_token`. Read-only tools accept it but do not require it.
+
+Write tools (require token): `create_ticket`, `update_ticket`, `delete_ticket`, `add_comment`, `submit_pr_link`, `delete_pr_link`, `add_relationship`, `remove_relationship`, `reorder_tickets`, `upload_attachment`, `delete_attachment`, `create_cycle`, `update_cycle`, `create_folder`, `update_folder`, `delete_folder`, `create_document`, `update_document_metadata`, `delete_document`, `save_document_version`, `rollback_document`, `create_tag`, `delete_tag`, `link_document_to_ticket`, `unlink_document_from_ticket`, `upload_document_attachment`, `delete_document_attachment`.
+
+Read-only tools (no token needed): `list_tickets`, `get_ticket`, `list_comments`, `list_pr_links`, `list_relationships`, `list_attachments`, `get_ticket_history`, `get_stats`, `list_projects`, `list_cycles`, `list_folders`, `list_documents`, `get_document`, `list_document_versions`, `get_document_version`, `list_tags`, `list_linked_tickets`, `list_document_attachments`, `search_documents`.
 
 ### Get the token
 
@@ -403,6 +407,46 @@ If something else is broken, the MCP server logs are inside the container: `dock
 
 ---
 
-## 12. Tool reference
+## 12. Docs system
 
-The full per-tool reference (parameters, return shapes, examples) lives in [skill.md](skill.md). Copy it into your agent's skills directory if your agent supports skill files (Claude Code, Cursor, etc.).
+Taskie includes a Confluence-style documentation layer alongside its ticket system. Documents live in **spaces** (global or per-project), inside **folders**, and are versioned. Every write is an append-only version — you can roll back to any prior version.
+
+### Quick orientation
+
+```python
+# Browse global docs
+list_folders(space="global")
+list_documents(space="global")
+
+# Browse project docs
+list_folders(space="project", project_id=1)
+list_documents(space="project", project_id=1)
+
+# Full-text search across all docs
+search_documents(q="authentication flow")
+
+# Create a design doc for a project, link it to a ticket
+doc = create_document(
+    title="Payment API — Design",
+    space_type="project", project_id=1,
+    body_md="## Overview\n\n...",
+    change_note="Initial draft",
+    tags=["design", "payments"],
+)
+link_document_to_ticket(document_id=doc["id"], ticket_id=42)
+
+# Save a new version after implementation
+save_document_version(
+    document_id=doc["id"],
+    body_md="## Overview\n\n...\n\n## Implementation notes\n\n...",
+    change_note="Post-implementation update",
+)
+```
+
+The web UI (port 8080) shows a **Docs** section in the sidebar with folder trees, document viewers, and breadcrumb navigation. Documents render Markdown (marked + DOMPurify).
+
+---
+
+## 13. Tool reference
+
+45 tools total. The full per-tool reference (parameters, return shapes, examples) lives in [skill.md](skill.md). Copy it into your agent's skills directory if your agent supports skill files (Claude Code, Cursor, etc.).

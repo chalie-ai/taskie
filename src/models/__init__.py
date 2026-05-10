@@ -16,6 +16,16 @@ from src.models.ticket import Ticket
 from src.models.comment import Comment
 from src.models.pr_link import PRLink
 from src.models.ticket_relationship import TicketRelationship
-from src.models.ticket_history import TicketHistory
+from src.models.activity_log import ActivityLog
+# Deprecated alias kept for one release; remove in v0.4.0 once all callers
+# import ActivityLog directly. See src/services/history_service.py for the
+# matching ``log(ticket_id, ...)`` compat shim.
+TicketHistory = ActivityLog
 from src.models.user import User
 from src.models.attachment import Attachment
+from src.models.folder import Folder
+from src.models.document_version import DocumentVersion
+from src.models.document import Document
+from src.models.tag import Tag
+from src.models.document_tag import DocumentTag
+from src.models.document_ticket_link import DocumentTicketLink

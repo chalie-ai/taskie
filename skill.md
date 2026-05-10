@@ -1,6 +1,10 @@
 # Task Tracker MCP Tools
 
-Reference for the 23 MCP tools available from the Task Tracker server.
+Reference for the 45 MCP tools available from the Task Tracker server.
+
+Tools are grouped into two areas:
+- **Tickets & Projects** (tools 1–23): tickets, comments, PR links, relationships, attachments, cycles, projects, stats
+- **Docs** (tools 24–45): folders, documents, versions, tags, doc↔ticket links, document attachments, search
 
 ## Markdown
 
@@ -238,6 +242,251 @@ Remove an attachment. Requires `agent_token`. Logs an `attachment_removed` activ
 | `attachment_id` | int | **Required.** Attachment ID |
 | `agent_token` | str | **Required.** Your agent token |
 
+---
+
+## Docs Tools
+
+The docs system provides Confluence-style documentation management organised into spaces ("global" or per-project), folders, documents, and versions. All content is stored as Markdown.
+
+### Space types
+
+| `space_type` | When to use |
+|---|---|
+| `global` | Documentation not tied to a specific project (architecture docs, runbooks, ADRs) |
+| `project` | Documentation scoped to a project; requires `project_id` |
+
+---
+
+### list_folders
+List folders in a space. Read-only.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `space` | str | **Required.** `global` or `project` |
+| `project_id` | int | Required when `space=project` |
+
+### create_folder
+Create a folder. Requires `agent_token`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `agent_token` | str | **Required.** Your agent token |
+| `name` | str | **Required.** Folder name |
+| `space_type` | str | **Required.** `global` or `project` |
+| `project_id` | int | Required when `space_type=project` |
+| `parent_folder_id` | int | Parent folder for nesting |
+| `sort_order` | int | Display order hint |
+
+### update_folder
+Rename or move a folder. PATCH semantics. Requires `agent_token`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `folder_id` | int | **Required.** Folder ID |
+| `agent_token` | str | **Required.** Your agent token |
+| `name` | str | New name |
+| `parent_folder_id` | int | New parent (`null` moves to root) |
+| `sort_order` | int | New sort order |
+
+### delete_folder
+Delete a folder and everything inside it (subfolders, documents, versions, tags, links, attachment files). Requires `agent_token`. Cannot be undone.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `folder_id` | int | **Required.** Folder ID |
+| `agent_token` | str | **Required.** Your agent token |
+
+---
+
+### list_documents
+List documents in a space, with optional filters. Read-only.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `space` | str | **Required.** `global` or `project` |
+| `project_id` | int | Required when `space=project` |
+| `folder_id` | int | Filter by folder |
+| `tag` | str | Filter by tag name |
+| `limit` | int | Max results (default 50) |
+| `offset` | int | Pagination offset |
+
+### get_document
+Get full document details: metadata, current version body, tags, linked ticket IDs, and attachments. Read-only.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+
+### create_document
+Create a document and optionally its first version. Requires `agent_token`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `agent_token` | str | **Required.** Your agent token |
+| `title` | str | **Required.** Document title |
+| `space_type` | str | **Required.** `global` or `project` |
+| `project_id` | int | Required when `space_type=project` |
+| `folder_id` | int | Folder to place the document in |
+| `body_md` | str | Initial body (Markdown) |
+| `change_note` | str | Note for the first version |
+| `tags` | list[str] | Tag names to attach (created if they don't exist) |
+| `sort_order` | int | Display order hint |
+
+### update_document_metadata
+Update document metadata (title, folder, sort order, tags). Does NOT create a new version — use `save_document_version` for content edits. Requires `agent_token`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+| `agent_token` | str | **Required.** Your agent token |
+| `title` | str | New title |
+| `folder_id` | int | New folder (`null` moves to root) |
+| `sort_order` | int | New sort order |
+| `tags` | list[str] | Replace full tag set (pass `[]` to clear all tags) |
+
+### delete_document
+Delete a document, all its versions, tags, links, and attachment files. Requires `agent_token`. Cannot be undone.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+| `agent_token` | str | **Required.** Your agent token |
+
+---
+
+### list_document_versions
+List all versions of a document. Read-only. Returns id, version_number, title, change_note, created_at, and created_by.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+
+### get_document_version
+Get a specific version including its full `body_md`. Read-only.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+| `version_id` | int | **Required.** Version ID |
+
+### save_document_version
+Save a new version of a document and make it current. Requires `agent_token`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+| `agent_token` | str | **Required.** Your agent token |
+| `body_md` | str | **Required.** New body (Markdown) |
+| `title` | str | New title (defaults to current) |
+| `change_note` | str | Description of what changed |
+
+### rollback_document
+Roll back to a previous version. The old version becomes current; no new version is created. Requires `agent_token`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+| `version_id` | int | **Required.** Version ID to restore |
+| `agent_token` | str | **Required.** Your agent token |
+
+---
+
+### list_tags
+List tags, optionally filtered by name prefix. Read-only.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `prefix` | str | Only return tags whose name starts with this string |
+
+### create_tag
+Create a tag (or return the existing one if the name already exists). Requires `agent_token`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `agent_token` | str | **Required.** Your agent token |
+| `name` | str | **Required.** Tag name |
+
+### delete_tag
+Delete a tag globally. All document_tag associations are removed. Requires `agent_token`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tag_id` | int | **Required.** Tag ID |
+| `agent_token` | str | **Required.** Your agent token |
+
+---
+
+### link_document_to_ticket
+Link a document to a ticket (bidirectional). Idempotent — safe to call again if already linked. Requires `agent_token`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+| `ticket_id` | int | **Required.** Ticket ID |
+| `agent_token` | str | **Required.** Your agent token |
+
+### unlink_document_from_ticket
+Remove a document↔ticket link. Requires `agent_token`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+| `ticket_id` | int | **Required.** Ticket ID |
+| `agent_token` | str | **Required.** Your agent token |
+
+### list_linked_tickets
+List ticket IDs linked to a document. Read-only.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+
+---
+
+### list_document_attachments
+List attachments on a document. Read-only.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+
+### upload_document_attachment
+Upload a file to a document. Requires `agent_token`. Max 25MB. File must be base64-encoded.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+| `agent_token` | str | **Required.** Your agent token |
+| `filename` | str | **Required.** Original filename |
+| `file_base64` | str | **Required.** Base64-encoded file contents |
+| `content_type` | str | MIME type (defaults to `application/octet-stream`) |
+
+### delete_document_attachment
+Remove an attachment from a document. Requires `agent_token`. On-disk file is removed too.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `document_id` | int | **Required.** Document ID |
+| `attachment_id` | int | **Required.** Attachment ID |
+| `agent_token` | str | **Required.** Your agent token |
+
+---
+
+### search_documents
+Full-text search across document titles and bodies. Uses FTS5 on SQLite, FULLTEXT index on MySQL. Read-only.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `q` | str | **Required.** Search query (multi-word = AND match) |
+| `space` | str | Filter by space (`global` or `project`) |
+| `project_id` | int | Filter by project |
+| `tag` | str | Filter by tag name |
+| `limit` | int | Max results (1–100, default 20) |
+
+Returns a list of `{id, title, snippet, rank, space_type, project_id, folder_id}`.
+
+---
+
 ## Common Workflows
 
 ### "What should I work on?"
@@ -259,4 +508,42 @@ add_comment 5 "Starting implementation"
 submit_pr_link 5 url=https://github.com/org/repo/pull/42 title="Fix login timeout"
 add_comment 5 "PR open for review: https://github.com/org/repo/pull/42"
 update_ticket 5 status=review
+```
+
+### "Write a design doc for ticket PROJ-5"
+```python
+# Create the document in the project's docs space
+doc = create_document(
+    title="Auth Refactor — Design",
+    space_type="project",
+    project_id=1,
+    body_md="## Overview\n\nThis document describes ...",
+    change_note="Initial draft",
+    tags=["design", "auth"],
+)
+
+# Link it to the ticket so the panel shows it
+link_document_to_ticket(document_id=doc["id"], ticket_id=5)
+add_comment(ticket_id=5, body=f"Design doc written: doc #{doc['id']}")
+```
+
+### "Find all docs about authentication"
+```python
+results = search_documents(q="authentication", limit=10)
+for r in results:
+    print(r["title"], "—", r["snippet"])
+```
+
+### "Update a doc after implementation"
+```python
+# Get the current version
+doc = get_document(document_id=42)
+current = doc["current_version"]["body_md"]
+
+# Save a new version with changes
+save_document_version(
+    document_id=42,
+    body_md=current + "\n\n## Implementation notes\n\n...",
+    change_note="Added implementation notes post-merge",
+)
 ```

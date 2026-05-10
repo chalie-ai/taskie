@@ -20,17 +20,29 @@ class AttachmentService:
         return root
 
     @staticmethod
+    def _storage_root_for_doc():
+        basedir = current_app.config.get('basedir', os.path.dirname(current_app.root_path))
+        root = os.path.join(basedir, 'instance', 'attachments', 'docs')
+        os.makedirs(root, exist_ok=True)
+        return root
+
+    @staticmethod
     def _serialize(a):
         return {
             'id': a.id,
             'ticket_id': a.ticket_id,
+            'document_id': a.document_id,
             'filename': a.filename,
             'content_type': a.content_type,
             'size_bytes': a.size_bytes,
             'uploader_name': a.uploader_name,
             'user_id': a.user_id,
             'created_at': str(a.created_at),
-            'download_url': f'/api/tickets/{a.ticket_id}/attachments/{a.id}/download',
+            'download_url': (
+                f'/api/tickets/{a.ticket_id}/attachments/{a.id}/download'
+                if a.ticket_id
+                else f'/api/documents/{a.document_id}/attachments/{a.id}/download'
+            ),
         }
 
     @staticmethod
@@ -92,8 +104,65 @@ class AttachmentService:
         )
         db.session.add(a)
         db.session.flush()
-        HistoryService.log(ticket_id, 'attachment_added', None, original)
+        HistoryService.log_ticket(ticket_id, 'attachment_added', None, original)
         db.session.commit()
+        return AttachmentService._serialize(a)
+
+    @staticmethod
+    def list_for_document(doc_id):
+        from src.models import Document
+        if not Document.query.get(doc_id):
+            return None
+        rows = (Attachment.query.filter_by(document_id=doc_id)
+                .order_by(Attachment.created_at).all())
+        return [AttachmentService._serialize(a) for a in rows]
+
+    @staticmethod
+    def add_for_document(doc_id, file_storage):
+        from src.models import Document
+        if not Document.query.get(doc_id):
+            return None
+        if not file_storage or not file_storage.filename:
+            return {'error': 'No file provided'}
+        file_storage.stream.seek(0, os.SEEK_END)
+        size = file_storage.stream.tell()
+        file_storage.stream.seek(0)
+        if size > MAX_FILE_BYTES:
+            return {'error': f'File too large (max {MAX_FILE_BYTES // (1024*1024)}MB)'}
+        if size == 0:
+            return {'error': 'Empty file'}
+        original = secure_filename(file_storage.filename) or 'file'
+        ext = os.path.splitext(original)[1]
+        stored_name = f'{uuid.uuid4().hex}{ext}'
+        storage_root = AttachmentService._storage_root_for_doc()
+        full_path = os.path.join(storage_root, stored_name)
+        file_storage.save(full_path)
+        uploader, uid = (None, None)
+        if has_request_context():
+            uploader = getattr(g, 'user_name', None)
+            uid = getattr(g, 'user_id', None)
+        if not uploader:
+            uploader = 'Anonymous'
+        try:
+            a = Attachment(
+                document_id=doc_id, filename=original,
+                content_type=file_storage.mimetype or 'application/octet-stream',
+                size_bytes=size,
+                storage_path=os.path.join('docs', stored_name),  # path includes subdir
+                uploader_name=uploader, user_id=uid,
+            )
+            db.session.add(a)
+            db.session.flush()
+            HistoryService.log(entity_type='document', entity_id=doc_id,
+                               field_name='attachment_added', new_value=original)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            try:
+                os.remove(full_path)
+            except OSError:
+                pass
+            raise
         return AttachmentService._serialize(a)
 
     @staticmethod
@@ -102,7 +171,8 @@ class AttachmentService:
 
     @staticmethod
     def storage_full_path(attachment):
-        return os.path.join(AttachmentService._storage_root(), attachment.storage_path)
+        basedir = current_app.config.get('basedir', os.path.dirname(current_app.root_path))
+        return os.path.join(basedir, 'instance', 'attachments', attachment.storage_path)
 
     @staticmethod
     def delete_attachment(attachment_id):
@@ -110,11 +180,13 @@ class AttachmentService:
         if not a:
             return False
         full = AttachmentService.storage_full_path(a)
-        ticket_id = a.ticket_id
         filename = a.filename
-        # Delete the row first; if the unlink fails (file already gone, perms),
-        # we still want the row removed so the UI doesn't list a dangling entry.
-        HistoryService.log(ticket_id, 'attachment_removed', filename, None)
+        if a.ticket_id:
+            HistoryService.log(entity_type='ticket', entity_id=a.ticket_id,
+                               field_name='attachment_removed', old_value=filename)
+        else:
+            HistoryService.log(entity_type='document', entity_id=a.document_id,
+                               field_name='attachment_removed', old_value=filename)
         db.session.delete(a)
         db.session.commit()
         try:

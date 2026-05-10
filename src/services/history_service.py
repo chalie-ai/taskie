@@ -1,5 +1,5 @@
 from flask import g, has_request_context
-from src.models import Ticket, TicketHistory, db
+from src.models import db, ActivityLog, Ticket
 
 
 class HistoryService:
@@ -19,18 +19,24 @@ class HistoryService:
         return (name or 'System', uid)
 
     @staticmethod
-    def log(ticket_id, field_name, old_value=None, new_value=None,
+    def log(entity_type, entity_id, field_name, old_value=None, new_value=None,
             author_name=None, user_id=None):
-        """Persist an activity entry. Pass field_name='comment_added',
-        'pr_linked', 'relationship_added', etc. for non-field events."""
+        """Persist a polymorphic activity entry. Both ``entity_type`` and
+        ``entity_id`` are required; pass them by name or positionally."""
+        if entity_type is None or entity_id is None:
+            raise TypeError(
+                "HistoryService.log requires entity_type and entity_id; "
+                "for ticket audit entries use HistoryService.log_ticket()."
+            )
         if author_name is None or user_id is None:
             actor_name, actor_id = HistoryService._actor()
             if author_name is None:
                 author_name = actor_name
             if user_id is None:
                 user_id = actor_id
-        h = TicketHistory(
-            ticket_id=ticket_id,
+        h = ActivityLog(
+            entity_type=entity_type,
+            entity_id=entity_id,
             author_name=author_name,
             field_name=field_name,
             old_value=str(old_value) if old_value is not None else None,
@@ -41,12 +47,32 @@ class HistoryService:
         return h
 
     @staticmethod
-    def get_ticket_history(ticket_id):
-        ticket = Ticket.query.get(ticket_id)
-        if not ticket:
-            return None
+    def log_ticket(ticket_id, field_name, old_value=None, new_value=None,
+                   author_name=None, user_id=None):
+        """Convenience wrapper for ticket audit entries."""
+        return HistoryService.log(
+            'ticket', ticket_id, field_name,
+            old_value=old_value, new_value=new_value,
+            author_name=author_name, user_id=user_id,
+        )
+
+    @staticmethod
+    def list_for_entity(entity_type, entity_id):
+        """Polymorphic lookup. Returns serialized rows in chronological order."""
+        rows = ActivityLog.query.filter_by(
+            entity_type=entity_type, entity_id=entity_id
+        ).order_by(ActivityLog.created_at).all()
         return [{
             'id': h.id, 'author_name': h.author_name,
             'field_name': h.field_name, 'old_value': h.old_value,
             'new_value': h.new_value, 'created_at': str(h.created_at),
-        } for h in ticket.history_entries]
+        } for h in rows]
+
+    # Compat alias: existing callers (routes/tickets.py, ticket_service.py)
+    # use get_ticket_history(ticket_id). Returns None when the ticket is
+    # missing so the route's 404 path keeps working.
+    @staticmethod
+    def get_ticket_history(ticket_id):
+        if db.session.get(Ticket, ticket_id) is None:
+            return None
+        return HistoryService.list_for_entity('ticket', ticket_id)

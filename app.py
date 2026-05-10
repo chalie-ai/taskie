@@ -1,8 +1,10 @@
+import time
+import click
 from flask import Flask, send_from_directory
 from flask_cors import CORS
-from flask_migrate import Migrate
+from flask_migrate import Migrate, upgrade as alembic_upgrade
 from config import Config
-from src.models import db, User
+from src.models import db
 
 
 def create_app():
@@ -12,20 +14,18 @@ def create_app():
     db.init_app(app)
     Migrate(app, db)
 
+    # Routes register lazily — query bodies fire on first request, after
+    # alembic_upgrade() below has applied any pending migrations.
     from src.routes import register_all
     register_all(app)
 
     with app.app_context():
-        # Pre-create migrations: drop NOT NULL on tickets.cycle_id for existing
-        # sqlite DBs (TKT-234 backlog page needs cycle_id IS NULL tickets).
-        _migrate_tickets_cycle_id_nullable(app)
-
-        db.create_all()
+        # Schema is owned by alembic. Apply pending migrations on startup so
+        # docker installs upgrade transparently.
+        alembic_upgrade()
         from src.services.user_service import UserService
         UserService.bootstrap_master(app)
-        # Backfill legacy ticket rows that pre-date the canonical status set.
-        # `-` was used as an "unset" placeholder; NULL slipped in for tickets
-        # created before status had a default. Both should resolve to backlog.
+        # One-shot data backfill for status placeholders (TKT-235 cleanup).
         from src.models import Ticket
         legacy = Ticket.query.filter(
             db.or_(Ticket.status.is_(None), Ticket.status == '', Ticket.status == '-')
@@ -38,42 +38,48 @@ def create_app():
     def index():
         return send_from_directory('static', 'index.html')
 
+    @app.cli.command('reindex-docs')
+    @click.option('--space', type=click.Choice(['global', 'project']), default=None,
+                  help='Restrict to a single space (global or project).')
+    @click.option('--project-id', type=int, default=None,
+                  help='Restrict to a single project (requires --space project).')
+    def reindex_docs(space, project_id):
+        """Rebuild the FTS5/MySQL full-text search index for all documents.
+
+        On SQLite the FTS5 virtual table is truncated first so stale entries
+        from deleted documents are purged before re-populating. On MySQL the
+        search_body column lives on the documents table, so deleted rows are
+        already gone and no truncation step is needed.
+        """
+        from sqlalchemy import text
+        from src.models import Document
+        from src.services.document_search_service import DocumentSearchService
+
+        t0 = time.monotonic()
+
+        # SQLite: wipe the FTS table so deleted docs do not persist across runs.
+        if db.engine.dialect.name == 'sqlite':
+            db.session.execute(text("DELETE FROM document_fts"))
+            db.session.commit()
+
+        q = Document.query
+        if space:
+            q = q.filter(Document.space_type == space)
+        if project_id is not None:
+            q = q.filter(Document.project_id == project_id)
+
+        docs = q.order_by(Document.id).all()
+        total = len(docs)
+
+        for idx, doc in enumerate(docs, start=1):
+            DocumentSearchService.reindex_document(doc.id)
+            if idx % 50 == 0:
+                click.echo(f'reindexed {idx} of {total}...')
+
+        elapsed = time.monotonic() - t0
+        click.echo(f'reindexed {total} documents in {elapsed:.1f}s')
+
     return app
-
-
-def _migrate_tickets_cycle_id_nullable(app):
-    """Drop NOT NULL on tickets.cycle_id (sqlite-only, idempotent).
-
-    Older installs created `tickets.cycle_id` with NOT NULL. The Backlog page
-    (TKT-234) requires `cycle_id IS NULL` to be valid, so existing tables are
-    rebuilt in place. No-op if the column is already nullable or the table
-    doesn't exist yet.
-    """
-    from sqlalchemy import inspect, text
-    engine = db.engine
-    if engine.dialect.name != 'sqlite':
-        return
-    insp = inspect(engine)
-    if 'tickets' not in insp.get_table_names():
-        return
-    cols = insp.get_columns('tickets')
-    cycle_col = next((c for c in cols if c['name'] == 'cycle_id'), None)
-    if not cycle_col or cycle_col.get('nullable', True):
-        return
-    app.logger.info("migrating tickets.cycle_id to nullable")
-    with engine.begin() as conn:
-        conn.execute(text("PRAGMA foreign_keys=OFF"))
-        conn.execute(text("ALTER TABLE tickets RENAME TO _tickets_old"))
-        # Recreate via metadata (picks up new nullable=True from the model).
-        from src.models.ticket import Ticket  # noqa: F401 — registers metadata
-        Ticket.__table__.create(conn)
-        col_names = [c['name'] for c in cols]
-        conn.execute(text(
-            f"INSERT INTO tickets ({', '.join(col_names)}) "
-            f"SELECT {', '.join(col_names)} FROM _tickets_old"
-        ))
-        conn.execute(text("DROP TABLE _tickets_old"))
-        conn.execute(text("PRAGMA foreign_keys=ON"))
 
 
 if __name__ == '__main__':

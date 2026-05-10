@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from sqlalchemy.pool import StaticPool
 
 load_dotenv()
 
@@ -15,6 +16,9 @@ def _normalize_sqlite_url(url, basedir):
     if not url.startswith(prefix):
         return url
     rest = url[len(prefix):]
+    # ":memory:" is a magic SQLAlchemy DSN, not a relative path — leave it alone.
+    if rest == ":memory:" or not rest:
+        return url
     if rest.startswith("/"):
         return url
     return f"sqlite:///{os.path.abspath(os.path.join(basedir, rest))}"
@@ -27,6 +31,11 @@ class Config:
         basedir,
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = (
+        {'poolclass': StaticPool, 'connect_args': {'check_same_thread': False}}
+        if SQLALCHEMY_DATABASE_URI == 'sqlite:///:memory:'
+        else {}
+    )
     API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080/api")
     MCP_PORT = int(os.getenv("MCP_PORT", "5100"))
     JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")

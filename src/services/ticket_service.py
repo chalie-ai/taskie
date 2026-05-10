@@ -1,6 +1,6 @@
 from datetime import datetime
 from flask import g, current_app
-from src.models import db, Ticket, TicketHistory, TicketRelationship
+from src.models import db, Ticket, ActivityLog, TicketRelationship, DocumentTicketLink
 from src.services.relationship_service import RelationshipService
 from src.services.history_service import HistoryService
 
@@ -49,6 +49,8 @@ class TicketService:
             base['history'] = HistoryService.get_ticket_history(t.id)
             from src.services.attachment_service import AttachmentService
             base['attachments'] = AttachmentService.list_attachments(t.id) or []
+            from src.services.document_link_service import DocumentLinkService
+            base['linked_documents'] = DocumentLinkService.list_documents_for_ticket(t.id)
         return base
 
     @staticmethod
@@ -119,7 +121,7 @@ class TicketService:
         )
         db.session.add(t)
         db.session.flush()
-        HistoryService.log(t.id, 'ticket_created', None, t.display_id)
+        HistoryService.log_ticket(t.id, 'ticket_created', None, t.display_id)
         db.session.commit()
         return TicketService.get_ticket(t.id)
 
@@ -153,7 +155,7 @@ class TicketService:
                 if str(old_val) != str(new_val):
                     setattr(t, field, new_val)
                     if field in loggable:
-                        HistoryService.log(ticket_id, field, old_val, new_val)
+                        HistoryService.log_ticket(ticket_id, field, old_val, new_val)
         db.session.commit()
         return TicketService.get_ticket(ticket_id)
 
@@ -175,17 +177,24 @@ class TicketService:
         if not t:
             return False
         # Audit trail before the row is gone — comments/PR links cascade via the
-        # ORM relationship, but TicketHistory and TicketRelationship don't, so
-        # we clean those up explicitly to avoid FK constraint failures.
+        # ORM relationship, but ActivityLog (no FK to tickets), TicketRelationship,
+        # and DocumentTicketLink don't reliably cascade (SQLite's PRAGMA
+        # foreign_keys is OFF in this app), so we clean them up explicitly to
+        # avoid orphaned audit rows / FK constraint failures.
         actor = getattr(g, 'user_id', None)
         current_app.logger.warning(
             "ticket_deleted ticket_id=%s display_id=%s name=%r actor_user_id=%s",
             t.id, t.display_id, t.name, actor,
         )
-        TicketHistory.query.filter_by(ticket_id=ticket_id).delete(synchronize_session=False)
+        ActivityLog.query.filter_by(
+            entity_type='ticket', entity_id=ticket_id
+        ).delete(synchronize_session=False)
         TicketRelationship.query.filter(
             db.or_(TicketRelationship.ticket_id == ticket_id,
                    TicketRelationship.related_ticket_id == ticket_id)
+        ).delete(synchronize_session=False)
+        DocumentTicketLink.query.filter_by(
+            ticket_id=ticket_id
         ).delete(synchronize_session=False)
         db.session.delete(t)
         db.session.commit()
