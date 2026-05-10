@@ -149,6 +149,20 @@ class DocumentService:
             TagService.attach(d.id, name)
 
         db.session.commit()
+
+        # Reindex after commit so FTS always reflects durable state.
+        # Wrapped in try/except so a search-side failure (FTS5 corruption,
+        # transient I/O error, etc.) never prevents a document write from
+        # succeeding. Search going stale is recoverable; losing a write is not.
+        try:
+            from src.services.document_search_service import DocumentSearchService
+            DocumentSearchService.reindex_document(d.id)
+        except Exception:
+            if has_request_context():
+                current_app.logger.warning(
+                    "reindex_document failed after create doc_id=%s", d.id
+                )
+
         return DocumentService.get(d.id)
 
     @staticmethod
@@ -201,6 +215,17 @@ class DocumentService:
             d.updated_by = DocumentService._actor_id()
 
         db.session.commit()
+
+        # Reindex after commit — search degradation must never block a write.
+        try:
+            from src.services.document_search_service import DocumentSearchService
+            DocumentSearchService.reindex_document(doc_id)
+        except Exception:
+            if has_request_context():
+                current_app.logger.warning(
+                    "reindex_document failed after update_metadata doc_id=%s", doc_id
+                )
+
         return DocumentService.get(doc_id)
 
     @staticmethod
@@ -239,6 +264,17 @@ class DocumentService:
                            field_name='document_deleted', old_value=title)
 
         db.session.commit()
+
+        # Remove the document from the FTS index now that the row is gone.
+        # Wrapped in try/except — search degradation must never block a write.
+        try:
+            from src.services.document_search_service import DocumentSearchService
+            DocumentSearchService._delete_index(doc_id)
+        except Exception:
+            if has_request_context():
+                current_app.logger.warning(
+                    "reindex (delete) failed after delete doc_id=%s", doc_id
+                )
 
         # Remove attachment files from disk after the transaction is committed.
         # Best-effort: log failures but never let a missing file abort the delete.

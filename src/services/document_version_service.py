@@ -1,4 +1,4 @@
-from flask import g, has_request_context
+from flask import g, has_request_context, current_app
 from src.models import db, Document, DocumentVersion
 from src.services.document_service import _slugify
 from sqlalchemy import func
@@ -74,6 +74,18 @@ class DocumentVersionService:
                            new_value=str(v.version_number))
 
         db.session.commit()
+
+        # Reindex after commit so FTS reflects the new current version body.
+        # Wrapped in try/except — search degradation must never block a write.
+        try:
+            from src.services.document_search_service import DocumentSearchService
+            DocumentSearchService.reindex_document(doc_id)
+        except Exception:
+            if has_request_context():
+                current_app.logger.warning(
+                    "reindex_document failed after version save doc_id=%s", doc_id
+                )
+
         return DocumentVersionService._serialize(v)
 
     @staticmethod
@@ -101,4 +113,16 @@ class DocumentVersionService:
                            new_value=log_value)
 
         db.session.commit()
+
+        # Reindex after rollback so FTS reflects the rolled-back version's body.
+        # Wrapped in try/except — search degradation must never block a write.
+        try:
+            from src.services.document_search_service import DocumentSearchService
+            DocumentSearchService.reindex_document(doc_id)
+        except Exception:
+            if has_request_context():
+                current_app.logger.warning(
+                    "reindex_document failed after rollback doc_id=%s", doc_id
+                )
+
         return DocumentVersionService._serialize(v)

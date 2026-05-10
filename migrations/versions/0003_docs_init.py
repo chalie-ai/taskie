@@ -145,9 +145,36 @@ def upgrade():
         )
     op.create_index('ix_attachments_document_id', 'attachments', ['document_id'])
 
+    # FTS5 / FULLTEXT search index — dialect-aware, placed after all tables
+    # exist because the virtual table conceptually depends on 'documents'.
+    bind = op.get_bind()
+    if bind.dialect.name == 'sqlite':
+        op.execute("""
+            CREATE VIRTUAL TABLE document_fts USING fts5(
+                document_id UNINDEXED, title, body, tags,
+                tokenize = 'porter unicode61'
+            )
+        """)
+    elif bind.dialect.name == 'mysql':
+        op.add_column('documents',
+                      sa.Column('search_body', sa.Text(), nullable=True))
+        op.create_index('ft_documents_title', 'documents', ['title'],
+                        mysql_prefix='FULLTEXT')
+        op.create_index('ft_documents_search_body', 'documents', ['search_body'],
+                        mysql_prefix='FULLTEXT')
+
 
 def downgrade():
-    # Undo the attachments polymorphic extension FIRST because the FK references
+    # Drop FTS / FULLTEXT objects FIRST (before documents is dropped).
+    bind = op.get_bind()
+    if bind.dialect.name == 'sqlite':
+        op.execute("DROP TABLE IF EXISTS document_fts")
+    elif bind.dialect.name == 'mysql':
+        op.drop_index('ft_documents_search_body', table_name='documents')
+        op.drop_index('ft_documents_title', table_name='documents')
+        op.drop_column('documents', 'search_body')
+
+    # Undo the attachments polymorphic extension NEXT because the FK references
     # documents.id — the documents table must still exist when we drop the FK.
     op.drop_index('ix_attachments_document_id', table_name='attachments', if_exists=True)
     with op.batch_alter_table('attachments') as batch:

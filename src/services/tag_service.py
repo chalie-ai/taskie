@@ -1,3 +1,4 @@
+from flask import has_request_context, current_app
 from sqlalchemy.exc import IntegrityError
 from src.models import db, Tag, DocumentTag
 
@@ -91,16 +92,44 @@ class TagService:
         DocumentTag.query.filter_by(document_id=doc_id, tag_id=tag.id).delete(
             synchronize_session=False)
         db.session.commit()
+
+        # Reindex so FTS tags column reflects the detached tag.
+        # Wrapped in try/except — search degradation must never block a write.
+        try:
+            from src.services.document_search_service import DocumentSearchService
+            DocumentSearchService.reindex_document(doc_id)
+        except Exception:
+            if has_request_context():
+                current_app.logger.warning(
+                    "reindex_document failed after tag detach doc_id=%s", doc_id
+                )
+
         return True
 
     @staticmethod
     def set_for_document(doc_id, names):
         """Replace the document's tag set atomically. Single commit at the end
-        so a failure mid-loop rolls back the delete plus any partial attaches."""
+        so a failure mid-loop rolls back the delete plus any partial attaches.
+
+        Reindex is called ONCE here after the commit rather than inside attach()
+        because attach() is flush-only (the caller commits). Calling reindex
+        before the commit would index uncommitted tag data.
+        """
         DocumentTag.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
         for n in names:
             TagService.attach(doc_id, n)
         db.session.commit()
+
+        # Reindex after the single commit so FTS tags column is up to date.
+        # Wrapped in try/except — search degradation must never block a write.
+        try:
+            from src.services.document_search_service import DocumentSearchService
+            DocumentSearchService.reindex_document(doc_id)
+        except Exception:
+            if has_request_context():
+                current_app.logger.warning(
+                    "reindex_document failed after set_for_document doc_id=%s", doc_id
+                )
 
     @staticmethod
     def list_for_document(doc_id):
