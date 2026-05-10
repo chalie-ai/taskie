@@ -35,3 +35,26 @@ def test_list_doc_attachments(client, auth_headers, db):
     rows = resp.get_json()
     assert len(rows) == 2
     assert sorted(r['filename'] for r in rows) == ['a.txt', 'b.txt']
+
+
+def test_delete_doc_attachment(client, auth_headers, db):
+    from src.services.document_service import DocumentService
+    import io
+    doc = DocumentService.create({'title': 't', 'space_type': 'global',
+                                  'body_md': 'x'})
+    data = {'file': (io.BytesIO(b'hello'), 'note.txt')}
+    upload = client.post(f'/api/documents/{doc["id"]}/attachments',
+                         data=data, content_type='multipart/form-data',
+                         headers=auth_headers)
+    assert upload.status_code == 201
+    attachment_id = upload.get_json()['id']
+
+    resp = client.delete(
+        f'/api/documents/{doc["id"]}/attachments/{attachment_id}',
+        headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.get_json() == {'deleted': True}
+
+    list_resp = client.get(f'/api/documents/{doc["id"]}/attachments',
+                           headers=auth_headers)
+    assert list_resp.get_json() == []

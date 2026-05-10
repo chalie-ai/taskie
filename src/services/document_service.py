@@ -1,5 +1,6 @@
+import os
 import re
-from flask import g, has_request_context
+from flask import current_app, g, has_request_context
 from sqlalchemy.orm import joinedload
 from src.models import db, Document, DocumentVersion, Folder
 
@@ -209,9 +210,18 @@ class DocumentService:
             return None
 
         from src.models import DocumentTag, DocumentTicketLink, Attachment
+        from src.services.attachment_service import AttachmentService
 
         DocumentTag.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
         DocumentTicketLink.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
+
+        # Capture full paths BEFORE the bulk delete so we can remove them from
+        # disk after the DB commit succeeds. Never touch the filesystem before
+        # the transaction is durably committed.
+        attachment_paths = [
+            AttachmentService.storage_full_path(a)
+            for a in Attachment.query.filter_by(document_id=doc_id).all()
+        ]
         Attachment.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
 
         title = d.title  # capture before delete
@@ -229,4 +239,17 @@ class DocumentService:
                            field_name='document_deleted', old_value=title)
 
         db.session.commit()
+
+        # Remove attachment files from disk after the transaction is committed.
+        # Best-effort: log failures but never let a missing file abort the delete.
+        for path in attachment_paths:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError as e:
+                if has_request_context():
+                    current_app.logger.warning(
+                        "attachment file unlink failed path=%s err=%s", path, e
+                    )
+
         return True

@@ -143,18 +143,26 @@ class AttachmentService:
             uid = getattr(g, 'user_id', None)
         if not uploader:
             uploader = 'Anonymous'
-        a = Attachment(
-            document_id=doc_id, filename=original,
-            content_type=file_storage.mimetype or 'application/octet-stream',
-            size_bytes=size,
-            storage_path=os.path.join('docs', stored_name),  # path includes subdir
-            uploader_name=uploader, user_id=uid,
-        )
-        db.session.add(a)
-        db.session.flush()
-        HistoryService.log(entity_type='document', entity_id=doc_id,
-                           field_name='attachment_added', new_value=original)
-        db.session.commit()
+        try:
+            a = Attachment(
+                document_id=doc_id, filename=original,
+                content_type=file_storage.mimetype or 'application/octet-stream',
+                size_bytes=size,
+                storage_path=os.path.join('docs', stored_name),  # path includes subdir
+                uploader_name=uploader, user_id=uid,
+            )
+            db.session.add(a)
+            db.session.flush()
+            HistoryService.log(entity_type='document', entity_id=doc_id,
+                               field_name='attachment_added', new_value=original)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            try:
+                os.remove(full_path)
+            except OSError:
+                pass
+            raise
         return AttachmentService._serialize(a)
 
     @staticmethod

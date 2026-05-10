@@ -143,11 +143,13 @@ def upgrade():
             '(ticket_id IS NOT NULL AND document_id IS NULL) OR '
             '(ticket_id IS NULL AND document_id IS NOT NULL)',
         )
+    op.create_index('ix_attachments_document_id', 'attachments', ['document_id'])
 
 
 def downgrade():
     # Undo the attachments polymorphic extension FIRST because the FK references
     # documents.id — the documents table must still exist when we drop the FK.
+    op.drop_index('ix_attachments_document_id', table_name='attachments', if_exists=True)
     with op.batch_alter_table('attachments') as batch:
         batch.drop_constraint('ck_attachment_one_parent', type_='check')
         batch.drop_constraint('fk_attachments_document', type_='foreignkey')
