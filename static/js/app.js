@@ -18,7 +18,6 @@ const I = {
   pr:       '<svg class="svg-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><path d="M4 5.5v5"/><path d="M5.5 4H10a2 2 0 012 2v5"/></svg>',
   trash:    '<svg class="svg-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9M7 6.5v5M9 6.5v5"/></svg>',
   doc:      '<svg class="svg-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h6l3 3v9a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M10 2v3h3"/></svg>',
-  folderOpen: '<svg class="svg-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4.5a1 1 0 011-1h3.5l1 1.5H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1v-7.5z"/></svg>',
 };
 
 const STATUSES = ['backlog','todo','progress','review','done','cancel'];
@@ -73,6 +72,9 @@ const App = {
   editorTags: [],
   // Version history panel open/closed
   versionsOpen: false,
+  // Docs search XHR state (hoisted to avoid race conditions on re-bind)
+  _searchXhr: null,
+  _searchDebounceTimer: null,
 
   async init() {
     if (!AUTH.token()) { this.showLogin(); return; }
@@ -599,7 +601,7 @@ const App = {
           <div class="panel-head-actions">
             <button class="btn-icon" title="Attach file" onclick="App.openAttachmentPicker(${t.id})">${I.attach}</button>
             <button class="btn-icon" title="Copy link" onclick="App.copyTicketLink(${t.id})">${I.link}</button>
-            <button class="btn-icon" title="Delete ticket" onclick="App.deleteTicket(${t.id}, '${this.esc(t.display_id)}')" style="color:var(--p-high)">${I.trash}</button>
+            <button class="btn-icon" title="Delete ticket" onclick="App.deleteTicket(${t.id})" style="color:var(--p-high)">${I.trash}</button>
             <button class="btn-icon" onclick="App.closePanel()" title="Close (Esc)">${I.close}</button>
           </div>
         </div>
@@ -817,12 +819,19 @@ const App = {
           const filtered = tickets.filter(t => t.id != ticketId).slice(0, 8);
           $('#rel-results').html(filtered.map(t => `
             <div class="rel-search-item"
-                 onclick="$('#rel-search').val('${App.esc(t.display_id)} — ${App.esc(t.name)}').data('selected-id',${t.id});$('#rel-results').html('')">
+                 data-ticket-id="${t.id}"
+                 data-display-id="${App.esc(t.display_id)}"
+                 data-ticket-name="${App.esc(t.name)}">
               <span class="rel-ticket-link">${App.esc(t.display_id)}</span>
               <span class="rel-ticket-name">${App.esc(t.name)}</span>
               <span class="rel-status-dot ${STATUS_DOT[t.status]}"></span>
             </div>
           `).join(''));
+          $('#rel-results').off('click').on('click', '.rel-search-item', function() {
+            const $el = $(this);
+            $('#rel-search').val($el.data('displayId') + ' — ' + $el.data('ticketName')).data('selected-id', $el.data('ticketId'));
+            $('#rel-results').html('');
+          });
         });
       }, 200);
     });
@@ -1219,7 +1228,12 @@ const App = {
     }
   },
 
-  logout() { AUTH.clear(); location.reload(); },
+  logout() {
+    if (this.editorMode && this.editorDirty) {
+      if (!confirm('You have unsaved changes. Discard them and sign out?')) return;
+    }
+    AUTH.clear(); location.reload();
+  },
 
   showNewUserModal() {
     const modal = $(`
@@ -1315,7 +1329,9 @@ const App = {
   },
 
   async deleteTicket(id, display) {
-    if (!confirm(`Delete ${display}?\n\nThis is permanent — the ticket and its comments, PR links, and history will be removed.`)) return;
+    const ticket = this.tickets.find(t => t.id == id) || this.ticketDetail;
+    const label = display || (ticket ? ticket.display_id : `#${id}`);
+    if (!confirm(`Delete ${label}?\n\nThis is permanent — the ticket and its comments, PR links, and history will be removed.`)) return;
     try {
       await $.ajax({ url: `/api/tickets/${id}`, method: 'DELETE' });
       this.closePanel();
@@ -1442,7 +1458,19 @@ const App = {
   },
 
   // ── Navigation ──
+  _guardDirtyEditor() {
+    if (this.editorMode && this.editorDirty) {
+      if (!confirm('You have unsaved changes. Discard them?')) return false;
+    }
+    this.editorMode = false;
+    this.editorDirty = false;
+    this.editorTags = [];
+    this.versionsOpen = false;
+    return true;
+  },
+
   setView(v, projectId) {
+    if (!this._guardDirtyEditor()) return;
     if (v === 'docs-global') {
       this.view = 'docs-global';
       this.activeProjectId = null;
@@ -1471,9 +1499,18 @@ const App = {
     this.activeProjectId = null;
     this.render();
   },
-  setCycle(id) { this.activeCycleId = id; this.view = 'cycle'; this.render(); },
-  selectProject(id) { this.activeProjectId = id; this.view = 'project'; this.render(); },
-  showProjectsView() { this.view = 'projects'; this.activeProjectId = null; this.render(); },
+  setCycle(id) {
+    if (!this._guardDirtyEditor()) return;
+    this.activeCycleId = id; this.view = 'cycle'; this.render();
+  },
+  selectProject(id) {
+    if (!this._guardDirtyEditor()) return;
+    this.activeProjectId = id; this.view = 'project'; this.render();
+  },
+  showProjectsView() {
+    if (!this._guardDirtyEditor()) return;
+    this.view = 'projects'; this.activeProjectId = null; this.render();
+  },
 
   bindBoardEvents() {
     $('.col-add[data-status]').off('click').on('click', function() {
@@ -1836,6 +1873,10 @@ const App = {
       if (this.versionsOpen) {
         this.loadVersionsInline(this.currentDoc.id);
       }
+      // Lazy-fetch any linked tickets not in local cache
+      const linkedIds = this.currentDoc.linked_ticket_ids || [];
+      const unknownIds = linkedIds.filter(tid => !this.tickets.find(x => x.id === tid));
+      unknownIds.forEach(tid => this._lazyFetchLinkedTicket(this.currentDoc.id, tid));
     }
   },
 
@@ -1910,7 +1951,8 @@ const App = {
               <button class="docs-link-remove" onclick="event.stopPropagation();App.unlinkDocTicket(${doc.id},${t.id})" title="Unlink">${I.close}</button>
             </div>`;
           }
-          return `<div class="docs-link-row">
+          // Unknown ticket — render placeholder and lazy-fetch
+          return `<div class="docs-link-row" id="docs-linked-ticket-${tid}">
             <span class="docs-link-id">Ticket #${tid}</span>
             <span class="docs-link-name" style="color:var(--text-faint)">Loading…</span>
             <button class="docs-link-remove" onclick="event.stopPropagation();App.unlinkDocTicket(${doc.id},${tid})" title="Unlink">${I.close}</button>
@@ -1994,13 +2036,22 @@ const App = {
       }
     });
 
-    // Search bar
-    let searchDebounce = null;
-    $(document).off('input.docs-search').on('input.docs-search', '#docs-search-input', () => {
-      const q = $('#docs-search-input').val().trim();
-      clearTimeout(searchDebounce);
+    // Delegated download handler — avoids filename in onclick attr (XSS)
+    $(document).off('click.docs-download').on('click.docs-download', '.docs-attachment-row .btn[data-attachment-id]', function() {
+      const $btn = $(this);
+      App.downloadDocAttachment(
+        parseInt($btn.data('docId')),
+        parseInt($btn.data('attachmentId')),
+        $btn.data('filename')
+      );
+    });
+
+    // Search bar — uses App._searchXhr and App._searchDebounceTimer (hoisted) to avoid race on re-bind
+    $(document).off('input.docs-search').on('input.docs-search', '#docs-search-input', function() {
+      const q = $(this).val().trim();
+      if (App._searchDebounceTimer) clearTimeout(App._searchDebounceTimer);
       if (!q) { $('#docs-search-results').hide(); return; }
-      searchDebounce = setTimeout(() => App.doDocsSearch(q), 300);
+      App._searchDebounceTimer = setTimeout(() => App.doDocsSearch(q), 300);
     });
 
     $(document).off('keydown.docs-search').on('keydown.docs-search', '#docs-search-input', function(e) {
@@ -2111,6 +2162,7 @@ const App = {
   async deleteFolder(folderId) {
     const folder = this.folders.find(f => f.id === folderId);
     if (!folder) return;
+    if (this.editorDirty && !confirm('You have unsaved edits in the open document. Continue with folder delete?')) return;
     if (!confirm(`Delete folder "${folder.name}"?\n\nAll documents and subfolders will be deleted. This cannot be undone.`)) return;
     try {
       await $.ajax({ url: `/api/folders/${folderId}`, method: 'DELETE' });
@@ -2229,6 +2281,8 @@ const App = {
     this.editorDirty = false;
     this.editorTags = [];
     this.versionsOpen = false;
+    // Show loading state immediately so the pane isn't blank during fetch
+    $('#docs-content-pane').html('<div class="docs-empty"><div class="spinner"></div><div style="margin-top:12px;color:var(--text-muted)">Loading document…</div></div>');
     try {
       const doc = await $.get(`/api/documents/${id}`);
       this.currentDoc = doc;
@@ -2253,6 +2307,7 @@ const App = {
   async deleteDoc(id) {
     const doc = this.docs.find(d => d.id === id) || this.currentDoc;
     const name = doc ? doc.title : `document #${id}`;
+    if (this.editorDirty && this.activeDocId === id && !confirm('You have unsaved edits. Continue with delete?')) return;
     if (!confirm(`Delete "${name}"?\n\nThis will permanently remove the document and all its versions. This cannot be undone.`)) return;
     try {
       await $.ajax({ url: `/api/documents/${id}`, method: 'DELETE' });
@@ -2274,32 +2329,39 @@ const App = {
 
   // ── Docs search ──
 
-  async doDocsSearch(q) {
+  doDocsSearch(q) {
+    // Abort any in-flight request to prevent stale results
+    if (this._searchXhr) { this._searchXhr.abort(); this._searchXhr = null; }
+    if (!q || !q.trim()) { $('#docs-search-results').hide(); return; }
     const ctx = this.docsContext;
     const params = { q, limit: 20 };
     if (ctx.space) params.space = ctx.space;
     if (ctx.project_id) params.project_id = ctx.project_id;
-    try {
-      const results = await $.get('/api/documents/search', params);
-      const $res = $('#docs-search-results');
-      if (!results.length) {
-        $res.html('<div class="docs-search-empty">No matches</div>').show();
-        return;
-      }
-      $res.html(results.map(r => {
-        // Allow <mark> tags in snippet — sanitize with DOMPurify allowing mark
-        const safeSnippet = typeof DOMPurify !== 'undefined'
-          ? DOMPurify.sanitize(r.snippet || '', { ALLOWED_TAGS: ['mark'], ALLOWED_ATTR: [] })
-          : this.esc(r.snippet || '');
-        return `<div class="docs-search-result-row" onclick="App.selectSearchResult(${r.id})">
-          <div class="docs-search-result-title">${this.esc(r.title)}</div>
-          ${safeSnippet ? `<div class="docs-search-result-snippet">${safeSnippet}</div>` : ''}
-        </div>`;
-      }).join('')).show();
-    } catch (e) {
-      console.error('docs search error:', e);
-      $('#docs-search-results').html('<div class="docs-search-empty">Search failed</div>').show();
-    }
+    this._searchXhr = $.get('/api/documents/search', params)
+      .done(results => {
+        this._searchXhr = null;
+        const $res = $('#docs-search-results');
+        if (!results.length) {
+          $res.html('<div class="docs-search-empty">No matches</div>').show();
+          return;
+        }
+        $res.html(results.map(r => {
+          // Allow <mark> tags in snippet — sanitize with DOMPurify allowing mark
+          const safeSnippet = typeof DOMPurify !== 'undefined'
+            ? DOMPurify.sanitize(r.snippet || '', { ALLOWED_TAGS: ['mark'], ALLOWED_ATTR: [] })
+            : this.esc(r.snippet || '');
+          return `<div class="docs-search-result-row" onclick="App.selectSearchResult(${r.id})">
+            <div class="docs-search-result-title">${this.esc(r.title)}</div>
+            ${safeSnippet ? `<div class="docs-search-result-snippet">${safeSnippet}</div>` : ''}
+          </div>`;
+        }).join('')).show();
+      })
+      .fail(e => {
+        if (e.statusText === 'abort') return; // expected when a newer request supersedes
+        this._searchXhr = null;
+        console.error('docs search error:', e);
+        $('#docs-search-results').html('<div class="docs-search-empty">Search failed</div>').show();
+      });
   },
 
   selectSearchResult(docId) {
@@ -2406,6 +2468,11 @@ const App = {
         $('#editor-tag-suggestions').hide();
       }
     });
+
+    // Delegated handler for tag suggestion items (avoids inline onclick + XSS)
+    $(document).off('click.docs-tag-suggest').on('click.docs-tag-suggest', '.docs-tag-suggestion-item', function() {
+      App.addEditorTag($(this).data('tag'));
+    });
   },
 
   async _fetchTagSuggestions(prefix) {
@@ -2416,7 +2483,7 @@ const App = {
       if (!filtered.length) { $('#editor-tag-suggestions').hide(); return; }
       $('#editor-tag-suggestions').html(
         filtered.map(t =>
-          `<div class="docs-tag-suggestion-item" onclick="App.addEditorTag('${this.esc(t.name)}')">${this.esc(t.name)}</div>`
+          `<div class="docs-tag-suggestion-item" data-tag="${this.esc(t.name)}">${this.esc(t.name)}</div>`
         ).join('')
       ).show();
     } catch (e) {
@@ -2472,11 +2539,24 @@ const App = {
       return;
     }
 
+    const originalTagNames = (doc.tags || []).map(t => t.name).sort().join(',');
+    const newTagNames = [...this.editorTags].sort().join(',');
+    const tagsChanged = originalTagNames !== newTagNames;
+    const oldTitle = doc.title;
+    const oldBody = doc.current_version ? (doc.current_version.body_md || '') : '';
+    const titleChanged = newTitle !== oldTitle;
+    const bodyChanged = newBody !== oldBody;
+
+    // Nothing changed — exit cleanly without any API calls
+    if (!tagsChanged && !titleChanged && !bodyChanged) {
+      this.cancelDocEdit(docId);
+      return;
+    }
+
+    let stepReached = 'tags';
     try {
       // Step 1: If tags changed, PATCH document metadata
-      const originalTagNames = (doc.tags || []).map(t => t.name).sort().join(',');
-      const newTagNames = [...this.editorTags].sort().join(',');
-      if (originalTagNames !== newTagNames) {
+      if (tagsChanged) {
         await $.ajax({
           url: `/api/documents/${docId}`, method: 'PATCH',
           contentType: 'application/json',
@@ -2484,15 +2564,17 @@ const App = {
         });
       }
 
-      // Step 2: POST new version (always — even if only tags changed, to record title change)
-      const versionBody = { body_md: newBody };
-      if (newTitle !== doc.title) versionBody.title = newTitle;
-      if (changeNote) versionBody.change_note = changeNote;
-      await $.ajax({
-        url: `/api/documents/${docId}/versions`, method: 'POST',
-        contentType: 'application/json',
-        data: JSON.stringify(versionBody),
-      });
+      // Step 2: POST new version only if title or body changed
+      stepReached = 'version';
+      if (titleChanged || bodyChanged) {
+        const versionBody = { body_md: newBody, title: newTitle };
+        if (changeNote) versionBody.change_note = changeNote;
+        await $.ajax({
+          url: `/api/documents/${docId}/versions`, method: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify(versionBody),
+        });
+      }
 
       this.editorMode = false;
       this.editorDirty = false;
@@ -2500,7 +2582,12 @@ const App = {
       $(document).off('click.editor-tags');
       await this.openDoc(docId);
     } catch (e) {
-      const msg = e.responseJSON?.error || e.statusText || 'Save failed';
+      let msg;
+      if (stepReached === 'version' && tagsChanged) {
+        msg = 'Tags were saved, but the document body could not be saved. Please try again.';
+      } else {
+        msg = e.responseJSON?.error || e.statusText || 'Save failed';
+      }
       $('#editor-save-error').text(msg);
     }
   },
@@ -2671,6 +2758,33 @@ const App = {
     }
   },
 
+  _lazyFetchLinkedTicket(docId, ticketId) {
+    $.get(`/api/tickets/${ticketId}`)
+      .done(t => {
+        // Add to local cache so future renders don't need to re-fetch
+        if (!this.tickets.find(x => x.id === t.id)) this.tickets.push(t);
+        const $row = $(`#docs-linked-ticket-${ticketId}`);
+        if (!$row.length) return; // row may have been removed (unlinked)
+        $row.html(`
+          <span class="dot ${STATUS_DOT[t.status] || 'dot-backlog'}" style="width:7px;height:7px;border-radius:50%;flex-shrink:0"></span>
+          <span class="docs-link-id">${this.esc(t.display_id)}</span>
+          <span class="docs-link-name">${this.esc(t.name)}</span>
+          <button class="docs-link-remove" onclick="event.stopPropagation();App.unlinkDocTicket(${docId},${t.id})" title="Unlink">${I.close}</button>
+        `);
+        $row.attr('onclick', `App.openTicket(${t.id})`).css('cursor', 'pointer');
+      })
+      .fail(e => {
+        if (e.status === 404) {
+          const $row = $(`#docs-linked-ticket-${ticketId}`);
+          if ($row.length) {
+            $row.find('.docs-link-name').text(`Deleted ticket #${ticketId}`).css('color', 'var(--text-faint)');
+            $row.find('.docs-link-id').text('');
+            $row.attr('onclick', '').css('cursor', 'default');
+          }
+        }
+      });
+  },
+
   // ── Doc attachments ──
 
   openDocAttachmentPicker(docId) {
@@ -2686,7 +2800,7 @@ const App = {
             <span style="color:var(--text-muted);flex-shrink:0">${I.attach}</span>
             <span class="docs-attachment-name">${this.esc(a.filename)}</span>
             <span class="docs-attachment-meta">${this.fmtBytes(a.size_bytes)} · ${this.esc(a.uploader_name || '')} · ${this.relDateTime(a.created_at)}</span>
-            <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px;flex-shrink:0" onclick="App.downloadDocAttachment(${docId},${a.id},'${this.esc(a.filename)}')">Download</button>
+            <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px;flex-shrink:0" data-doc-id="${docId}" data-attachment-id="${a.id}" data-filename="${this.esc(a.filename)}">Download</button>
             <button class="btn-icon" onclick="App.deleteDocAttachment(${docId},${a.id})" title="Delete" style="color:var(--text-faint);flex-shrink:0">${I.trash}</button>
           </div>`).join('')
         : '<div class="docs-attachments-empty">No attachments yet.</div>';
@@ -2700,22 +2814,24 @@ const App = {
     const files = Array.from(fileList || []);
     if (!files.length) return;
     const $list = $('#docs-attachments-list');
-    for (const f of files) {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
       if (f.size > 25 * 1024 * 1024) {
         alert(`${f.name} is larger than 25MB and was skipped.`);
         continue;
       }
       const fd = new FormData();
       fd.append('file', f);
-      $list.prepend(`<div class="docs-attachment-row" id="upload-prog-${this.esc(f.name)}"><span class="spinner"></span> Uploading ${this.esc(f.name)}…</div>`);
+      const upId = 'upload-prog-' + Date.now() + '-' + i;
+      $list.prepend(`<div class="docs-attachment-row" id="${upId}"><span class="spinner"></span> Uploading ${this.esc(f.name)}…</div>`);
       try {
         await $.ajax({
           url: `/api/documents/${docId}/attachments`, method: 'POST',
           data: fd, processData: false, contentType: false,
         });
-        $(`#upload-prog-${this.esc(f.name)}`).remove();
+        $('#' + upId).remove();
       } catch (e) {
-        $(`#upload-prog-${this.esc(f.name)}`).remove();
+        $('#' + upId).remove();
         const msg = e.status === 413 ? 'File too large (max 25MB)' : (e.responseJSON?.error || e.statusText || 'Upload failed');
         alert(`Failed to upload ${f.name}: ${msg}`);
       }
