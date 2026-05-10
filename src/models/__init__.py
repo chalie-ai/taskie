@@ -26,3 +26,5 @@ from src.models.attachment import Attachment
 from src.models.folder import Folder
 from src.models.document_version import DocumentVersion
 from src.models.document import Document
+from src.models.tag import Tag
+from src.models.document_tag import DocumentTag

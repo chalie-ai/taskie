@@ -98,7 +98,28 @@ def upgrade():
     )
 
 
+    op.create_table(
+        'tags',
+        sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column('name', sa.String(length=100), nullable=False),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('name'),
+    )
+
+    op.create_table(
+        'document_tags',
+        sa.Column('document_id', sa.Integer(), nullable=False),
+        sa.Column('tag_id', sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(['document_id'], ['documents.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['tag_id'], ['tags.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('document_id', 'tag_id'),
+    )
+
+
 def downgrade():
+    op.drop_table('document_tags')
+    op.drop_table('tags')
     op.drop_table('documents')
     op.drop_table('document_versions')
     op.drop_table('folders')

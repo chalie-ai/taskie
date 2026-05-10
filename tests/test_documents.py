@@ -1,6 +1,3 @@
-import pytest
-
-
 def test_create_document_creates_v1(db):
     from src.services.document_service import DocumentService
     doc = DocumentService.create({
@@ -26,7 +23,6 @@ def test_create_document_in_project_space(db):
     assert doc['project_id'] == p.id
 
 
-@pytest.mark.skip(reason="requires Task 6 (tags) + Task 7 (links) + Task 8 (attachments.document_id)")
 def test_get_document_includes_tags_and_links(db):
     from src.services.document_service import DocumentService
     doc = DocumentService.create({'title': 't', 'space_type': 'global',
