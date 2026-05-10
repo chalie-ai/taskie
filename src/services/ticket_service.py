@@ -49,6 +49,8 @@ class TicketService:
             base['history'] = HistoryService.get_ticket_history(t.id)
             from src.services.attachment_service import AttachmentService
             base['attachments'] = AttachmentService.list_attachments(t.id) or []
+            from src.services.document_link_service import DocumentLinkService
+            base['linked_documents'] = DocumentLinkService.list_documents_for_ticket(t.id)
         return base
 
     @staticmethod

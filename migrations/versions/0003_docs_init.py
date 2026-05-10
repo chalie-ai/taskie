@@ -119,6 +119,20 @@ def upgrade():
     # The composite PK only accelerates lookups starting with document_id.
     op.create_index('ix_document_tags_tag_id', 'document_tags', ['tag_id'])
 
+    op.create_table(
+        'document_ticket_links',
+        sa.Column('document_id', sa.Integer(), nullable=False),
+        sa.Column('ticket_id', sa.Integer(), nullable=False),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.Column('created_by', sa.Integer(), nullable=True),
+        sa.ForeignKeyConstraint(['created_by'], ['users.id']),
+        sa.ForeignKeyConstraint(['document_id'], ['documents.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['ticket_id'], ['tickets.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('document_id', 'ticket_id'),
+    )
+    op.create_index('ix_document_ticket_links_ticket_id',
+                    'document_ticket_links', ['ticket_id'])
+
 
 def downgrade():
     # if_exists guards make this revision safe to downgrade on environments
@@ -126,6 +140,9 @@ def downgrade():
     # (this revision grows across Tasks 4–8). Without these, a downgrade
     # crashes on the first table that wasn't yet present when the dev
     # originally ran upgrade.
+    op.drop_index('ix_document_ticket_links_ticket_id',
+                  table_name='document_ticket_links', if_exists=True)
+    op.drop_table('document_ticket_links', if_exists=True)
     op.drop_index('ix_document_tags_tag_id', table_name='document_tags', if_exists=True)
     op.drop_table('document_tags', if_exists=True)
     op.drop_table('tags', if_exists=True)

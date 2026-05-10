@@ -12,6 +12,7 @@ def register_all(app):
     from src.routes.documents import documents_bp
     from src.routes.document_versions import document_versions_bp
     from src.routes.tags import tags_bp
+    from src.routes.document_links import document_links_bp
 
     app.register_blueprint(cycles_bp, url_prefix='/api')
     app.register_blueprint(projects_bp, url_prefix='/api')
@@ -26,3 +27,4 @@ def register_all(app):
     app.register_blueprint(documents_bp, url_prefix='/api')
     app.register_blueprint(document_versions_bp, url_prefix='/api')
     app.register_blueprint(tags_bp, url_prefix='/api')
+    app.register_blueprint(document_links_bp, url_prefix='/api')

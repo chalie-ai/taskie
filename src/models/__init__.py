@@ -28,3 +28,4 @@ from src.models.document_version import DocumentVersion
 from src.models.document import Document
 from src.models.tag import Tag
 from src.models.document_tag import DocumentTag
+from src.models.document_ticket_link import DocumentTicketLink

@@ -82,20 +82,15 @@ class DocumentService:
         from src.services.tag_service import TagService
         out['tags'] = TagService.list_for_document(doc_id)
 
-        # TODO(task-7): drop DocumentLinkService import guard once document_link_service lands.
-        DocumentLinkService = None
+        from src.services.document_link_service import DocumentLinkService
+        out['linked_ticket_ids'] = DocumentLinkService.list_ticket_ids(doc_id)
+
         # TODO(task-8): drop AttachmentService import guard once attachment_service gains list_for_document.
         AttachmentService = None
-        try:
-            from src.services.document_link_service import DocumentLinkService  # noqa: F811
-        except ImportError:
-            pass
         try:
             from src.services.attachment_service import AttachmentService  # noqa: F811
         except ImportError:
             pass
-
-        out['linked_ticket_ids'] = DocumentLinkService.list_ticket_ids(doc_id) if DocumentLinkService else []
         if AttachmentService and hasattr(AttachmentService, 'list_for_document'):
             out['attachments'] = AttachmentService.list_for_document(doc_id) or []
         else:
@@ -222,15 +217,12 @@ class DocumentService:
         if not d:
             return None
 
-        from src.models import DocumentTag
-        # TODO(task-7): drop guard once DocumentTicketLink model lands
-        DocumentTicketLink = getattr(_models, 'DocumentTicketLink', None)
+        from src.models import DocumentTag, DocumentTicketLink
         # TODO(task-8): drop guard once Attachment gains document_id column
         Attachment = getattr(_models, 'Attachment', None)
 
         DocumentTag.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
-        if DocumentTicketLink is not None:
-            DocumentTicketLink.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
+        DocumentTicketLink.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
         if Attachment is not None and hasattr(Attachment, 'document_id'):
             Attachment.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
 
