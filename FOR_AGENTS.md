@@ -162,7 +162,7 @@ claude mcp list
 
 Every **write** tool requires an `agent_token`. Read-only tools accept it but do not require it.
 
-Write tools (require token): `create_ticket`, `update_ticket`, `delete_ticket`, `add_comment`, `submit_pr_link`, `delete_pr_link`, `add_relationship`, `remove_relationship`, `reorder_tickets`, `upload_attachment`, `delete_attachment`, `create_cycle`, `update_cycle`, `create_folder`, `update_folder`, `delete_folder`, `create_document`, `update_document_metadata`, `delete_document`, `save_document_version`, `rollback_document`, `create_tag`, `delete_tag`, `link_document_to_ticket`, `unlink_document_from_ticket`, `upload_document_attachment`, `delete_document_attachment`.
+Write tools (require token): `create_ticket`, `update_ticket`, `delete_ticket`, `add_comment`, `submit_pr_link`, `delete_pr_link`, `add_relationship`, `remove_relationship`, `reorder_tickets`, `upload_attachment`, `delete_attachment`, `create_cycle`, `update_cycle`, `create_folder`, `update_folder`, `delete_folder`, `create_document`, `update_document_metadata`, `delete_document`, `save_document`, `rollback_document`, `create_tag`, `delete_tag`, `link_document_to_ticket`, `unlink_document_from_ticket`, `upload_document_attachment`.
 
 Read-only tools (no token needed): `list_tickets`, `get_ticket`, `list_comments`, `list_pr_links`, `list_relationships`, `list_attachments`, `get_ticket_history`, `get_stats`, `list_projects`, `list_cycles`, `list_folders`, `list_documents`, `get_document`, `list_document_versions`, `get_document_version`, `list_tags`, `list_linked_tickets`, `list_document_attachments`, `search_documents`.
 
@@ -436,14 +436,24 @@ doc = create_document(
 link_document_to_ticket(document_id=doc["id"], ticket_id=42)
 
 # Save a new version after implementation
-save_document_version(
+save_document(
     document_id=doc["id"],
     body_md="## Overview\n\n...\n\n## Implementation notes\n\n...",
     change_note="Post-implementation update",
 )
 ```
 
-The web UI (port 8080) shows a **Docs** section in the sidebar with folder trees, document viewers, and breadcrumb navigation. Documents render Markdown (marked + DOMPurify).
+The web UI (port 8080) shows a **Docs** section in the sidebar with folder trees, document viewers, and breadcrumb navigation. Documents render Markdown (marked + DOMPurify). Doc↔ticket links are bidirectional and visible from both sides — the doc viewer shows a "Linked tickets" section, the ticket panel shows a "Linked documents" section, and either side can add/remove links.
+
+### Operational CLI
+
+```bash
+# Rebuild FTS5 index from scratch (run after restoring a backup or
+# if you suspect index corruption). Filters by space/project optional.
+flask reindex-docs                              # everything
+flask reindex-docs --space global               # only global docs
+flask reindex-docs --space project --project-id 1
+```
 
 ---
 

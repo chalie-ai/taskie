@@ -333,7 +333,7 @@ Create a document and optionally its first version. Requires `agent_token`.
 | `sort_order` | int | Display order hint |
 
 ### update_document_metadata
-Update document metadata (title, folder, sort order, tags). Does NOT create a new version — use `save_document_version` for content edits. Requires `agent_token`.
+Update document metadata (title, folder, sort order, tags). Does NOT create a new version — use `save_document` for content edits. Requires `agent_token`.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -369,7 +369,7 @@ Get a specific version including its full `body_md`. Read-only.
 | `document_id` | int | **Required.** Document ID |
 | `version_id` | int | **Required.** Version ID |
 
-### save_document_version
+### save_document
 Save a new version of a document and make it current. Requires `agent_token`.
 
 | Parameter | Type | Description |
@@ -461,12 +461,11 @@ Upload a file to a document. Requires `agent_token`. Max 25MB. File must be base
 | `file_base64` | str | **Required.** Base64-encoded file contents |
 | `content_type` | str | MIME type (defaults to `application/octet-stream`) |
 
-### delete_document_attachment
-Remove an attachment from a document. Requires `agent_token`. On-disk file is removed too.
+### delete_attachment
+Remove an attachment from a ticket OR document. Polymorphic — same tool handles both attachment kinds. Requires `agent_token`. On-disk file is removed too.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `document_id` | int | **Required.** Document ID |
 | `attachment_id` | int | **Required.** Attachment ID |
 | `agent_token` | str | **Required.** Your agent token |
 
@@ -541,7 +540,7 @@ doc = get_document(document_id=42)
 current = doc["current_version"]["body_md"]
 
 # Save a new version with changes
-save_document_version(
+save_document(
     document_id=42,
     body_md=current + "\n\n## Implementation notes\n\n...",
     change_note="Added implementation notes post-merge",
