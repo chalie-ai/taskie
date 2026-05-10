@@ -8,9 +8,9 @@ That's what Taskie is.
 
 ## Two interfaces. One database. Stays local.
 
-**Web UI (port `8080`)** — a clean, skimmable board for tickets, projects, and cycles. Designed for humans: organise work, write descriptions, track progress, review what your agent did.
+**Web UI (port `8080`)** — a clean, skimmable board for tickets, projects, cycles, and docs. Designed for humans: organise work, write descriptions, browse versioned documentation, track progress, review what your agent did.
 
-**MCP server (port `5100`)** — 23 tools your AI agent uses to read, create, update, and link tickets directly from its coding environment. Agents authenticate as the user they're working for via a per-user agent token.
+**MCP server (port `5100`)** — 45 tools your AI agent uses to read, create, update, and link tickets and documents directly from its coding environment. Agents authenticate as the user they're working for via a per-user agent token.
 
 Both interfaces talk to the same database. Your data stays on your machine.
 
