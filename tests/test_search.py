@@ -43,6 +43,23 @@ def test_search_filters_by_space(db):
     assert all(r['space_type'] == 'global' for r in rows)
 
 
+def test_search_multiword_query_ands_tokens(db):
+    from src.services.document_service import DocumentService
+    from src.services.document_search_service import DocumentSearchService
+    DocumentService.create({'title': 'Flask is a Python web framework',
+                            'space_type': 'global', 'body_md': 'x'})
+    DocumentService.create({'title': 'Just python here',
+                            'space_type': 'global', 'body_md': 'x'})
+    DocumentService.create({'title': 'Just flask here',
+                            'space_type': 'global', 'body_md': 'x'})
+    rows = DocumentSearchService.search(q='python flask')
+    titles = [r['title'] for r in rows]
+    # The doc with BOTH words must match. Docs with only one word must NOT.
+    assert any('Flask is a Python web framework' == t for t in titles)
+    assert not any('Just python here' == t for t in titles)
+    assert not any('Just flask here' == t for t in titles)
+
+
 def test_search_rest(client, db):
     from src.services.document_service import DocumentService
     DocumentService.create({'title': 'searchable', 'space_type': 'global',

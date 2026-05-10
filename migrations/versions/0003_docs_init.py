@@ -145,6 +145,13 @@ def upgrade():
         )
     op.create_index('ix_attachments_document_id', 'attachments', ['document_id'])
 
+    # search_body is added to documents on all dialects so the ORM model maps
+    # cleanly without dialect-conditional column presence. On SQLite it is
+    # always NULL (the SQLite FTS path writes document_fts, not this column).
+    # On MySQL it holds the denormalised title+body+tags text and carries the
+    # combined FULLTEXT index.
+    op.add_column('documents', sa.Column('search_body', sa.Text(), nullable=True))
+
     # FTS5 / FULLTEXT search index — dialect-aware, placed after all tables
     # exist because the virtual table conceptually depends on 'documents'.
     bind = op.get_bind()
@@ -156,11 +163,7 @@ def upgrade():
             )
         """)
     elif bind.dialect.name == 'mysql':
-        op.add_column('documents',
-                      sa.Column('search_body', sa.Text(), nullable=True))
-        op.create_index('ft_documents_title', 'documents', ['title'],
-                        mysql_prefix='FULLTEXT')
-        op.create_index('ft_documents_search_body', 'documents', ['search_body'],
+        op.create_index('ft_documents_search', 'documents', ['search_body', 'title'],
                         mysql_prefix='FULLTEXT')
 
 
@@ -170,9 +173,10 @@ def downgrade():
     if bind.dialect.name == 'sqlite':
         op.execute("DROP TABLE IF EXISTS document_fts")
     elif bind.dialect.name == 'mysql':
-        op.drop_index('ft_documents_search_body', table_name='documents')
-        op.drop_index('ft_documents_title', table_name='documents')
-        op.drop_column('documents', 'search_body')
+        op.drop_index('ft_documents_search', table_name='documents')
+    # search_body is present on all dialects — drop unconditionally.
+    with op.batch_alter_table('documents') as batch:
+        batch.drop_column('search_body')
 
     # Undo the attachments polymorphic extension NEXT because the FK references
     # documents.id — the documents table must still exist when we drop the FK.

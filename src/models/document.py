@@ -18,6 +18,7 @@ class Document(db.Model):
                       use_alter=True),
         nullable=True,
     )
+    search_body = db.Column(db.Text, nullable=True)
     sort_order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=utcnow)
     updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)

@@ -27,9 +27,13 @@ class DocumentSearchService:
             return
         from src.models import DocumentVersion
         cv = DocumentVersion.query.get(d.current_version_id) if d.current_version_id else None
-        body = cv.body_md if cv else ''
+        body = (cv.body_md if cv else '') or ''
         tags = ' '.join(TagService.list_for_document(doc_id))
         if DocumentSearchService._dialect() == 'sqlite':
+            # DELETE+INSERT pattern. SQLite serialises writers (single-writer model),
+            # so two concurrent reindex_document() calls for the same doc cannot
+            # interleave their DELETE/INSERT pairs. On MySQL the path is a single
+            # UPDATE on documents.search_body (no DELETE+INSERT, no race surface).
             db.session.execute(
                 text("DELETE FROM document_fts WHERE document_id = :id"),
                 {'id': doc_id},
@@ -47,8 +51,17 @@ class DocumentSearchService:
 
     @staticmethod
     def _delete_index(doc_id):
-        """Remove a document from the FTS index. Called when the document row
-        has already been deleted from the documents table."""
+        """Remove a document from the FTS index.
+
+        On SQLite this issues an explicit DELETE on document_fts.
+        On MySQL this is a no-op: search_body lives on the documents row,
+        so deleting the row removes the index entry transitively. Callers
+        that want to forcibly clear search_body without deleting the row
+        must do so themselves.
+
+        MUST be called AFTER the caller's db.session.commit() — this method
+        issues its own commit.
+        """
         if DocumentSearchService._dialect() == 'sqlite':
             db.session.execute(
                 text("DELETE FROM document_fts WHERE document_id = :id"),
@@ -58,15 +71,20 @@ class DocumentSearchService:
 
     @staticmethod
     def _fts5_quote(q):
-        """Wrap the user query in FTS5 double-quote phrase syntax so that
-        special characters (hyphens, colons, etc.) are treated as literals
-        rather than FTS5 operator tokens. Embedded double-quotes are escaped
-        by doubling them per the FTS5 spec.
+        """Quote each whitespace-separated token in `q` as an FTS5 phrase so
+        that hyphens and other operator-like characters are treated literally,
+        while still allowing multi-word AND-style matching across tokens.
+
+        Without per-token quoting, FTS5 parses `full-text` as `full NOT text`
+        and `python flask` as a single exact phrase. Per-token quoting fixes
+        both: `"full-text"` and `"python" "flask"` (implicit AND).
         """
-        return '"' + q.replace('"', '""') + '"'
+        tokens = (q or '').split()
+        return ' '.join('"' + t.replace('"', '""') + '"' for t in tokens)
 
     @staticmethod
     def search(q, space=None, project_id=None, tag=None, limit=20):
+        limit = min(max(1, limit or 20), 100)
         if not q or not q.strip():
             return []
         if DocumentSearchService._dialect() == 'sqlite':
@@ -86,13 +104,16 @@ class DocumentSearchService:
 
     @staticmethod
     def _search_mysql(q, space, project_id, tag, limit):
+        # MySQL: innodb_ft_min_token_size defaults to 3 — queries shorter than
+        # that silently return [] with no error. Set innodb_ft_min_token_size=1
+        # in my.cnf and rebuild the FULLTEXT index for short-term/acronym support.
         rows = db.session.execute(text("""
             SELECT id AS document_id,
                    SUBSTRING(search_body, 1, 200) AS snippet,
-                   MATCH(search_body, title) AGAINST (:q IN NATURAL LANGUAGE MODE) AS rank
+                   -MATCH(search_body, title) AGAINST (:q IN NATURAL LANGUAGE MODE) AS rank
               FROM documents
              WHERE MATCH(search_body, title) AGAINST (:q IN NATURAL LANGUAGE MODE)
-             ORDER BY rank DESC LIMIT :lim
+             ORDER BY rank LIMIT :lim
         """), {'q': q, 'lim': limit * 3}).fetchall()
         return DocumentSearchService._materialize(rows, space, project_id, tag, limit)
 
