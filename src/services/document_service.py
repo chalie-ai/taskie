@@ -1,5 +1,4 @@
 import re
-import src.models as _models
 from flask import g, has_request_context
 from sqlalchemy.orm import joinedload
 from src.models import db, Document, DocumentVersion, Folder
@@ -85,16 +84,8 @@ class DocumentService:
         from src.services.document_link_service import DocumentLinkService
         out['linked_ticket_ids'] = DocumentLinkService.list_ticket_ids(doc_id)
 
-        # TODO(task-8): drop AttachmentService import guard once attachment_service gains list_for_document.
-        AttachmentService = None
-        try:
-            from src.services.attachment_service import AttachmentService  # noqa: F811
-        except ImportError:
-            pass
-        if AttachmentService and hasattr(AttachmentService, 'list_for_document'):
-            out['attachments'] = AttachmentService.list_for_document(doc_id) or []
-        else:
-            out['attachments'] = []
+        from src.services.attachment_service import AttachmentService
+        out['attachments'] = AttachmentService.list_for_document(doc_id) or []
         return out
 
     @staticmethod
@@ -217,14 +208,11 @@ class DocumentService:
         if not d:
             return None
 
-        from src.models import DocumentTag, DocumentTicketLink
-        # TODO(task-8): drop guard once Attachment gains document_id column
-        Attachment = getattr(_models, 'Attachment', None)
+        from src.models import DocumentTag, DocumentTicketLink, Attachment
 
         DocumentTag.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
         DocumentTicketLink.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
-        if Attachment is not None and hasattr(Attachment, 'document_id'):
-            Attachment.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
+        Attachment.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
 
         title = d.title  # capture before delete
 

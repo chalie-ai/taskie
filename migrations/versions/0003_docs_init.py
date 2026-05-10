@@ -133,8 +133,27 @@ def upgrade():
     op.create_index('ix_document_ticket_links_ticket_id',
                     'document_ticket_links', ['ticket_id'])
 
+    with op.batch_alter_table('attachments') as batch:
+        batch.alter_column('ticket_id', nullable=True)
+        batch.add_column(sa.Column('document_id', sa.Integer(), nullable=True))
+        batch.create_foreign_key('fk_attachments_document', 'documents',
+                                 ['document_id'], ['id'], ondelete='CASCADE')
+        batch.create_check_constraint(
+            'ck_attachment_one_parent',
+            '(ticket_id IS NOT NULL AND document_id IS NULL) OR '
+            '(ticket_id IS NULL AND document_id IS NOT NULL)',
+        )
+
 
 def downgrade():
+    # Undo the attachments polymorphic extension FIRST because the FK references
+    # documents.id — the documents table must still exist when we drop the FK.
+    with op.batch_alter_table('attachments') as batch:
+        batch.drop_constraint('ck_attachment_one_parent', type_='check')
+        batch.drop_constraint('fk_attachments_document', type_='foreignkey')
+        batch.drop_column('document_id')
+        batch.alter_column('ticket_id', nullable=False)
+
     # if_exists guards make this revision safe to downgrade on environments
     # that were stamped at 0003 before later tasks extended this migration
     # (this revision grows across Tasks 4–8). Without these, a downgrade
