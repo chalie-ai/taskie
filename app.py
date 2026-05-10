@@ -7,6 +7,47 @@ from config import Config
 from src.models import db
 
 
+# Tables present in any v0.2.x install. If at least one of these exists but
+# `alembic_version` is missing/empty, the DB predates Plan 1's alembic baseline
+# (v0.2.x used db.create_all()) and must be stamped at 0001_baseline before
+# pending migrations run — otherwise 0001_baseline tries to CREATE TABLE on
+# tables that already exist and the worker dies on boot.
+_LEGACY_V02X_TABLES = ('users', 'tickets', 'projects', 'cycles')
+
+
+def _stamp_legacy_db_if_needed(app):
+    """Auto-stamp pre-alembic (v0.2.x) databases at 0001_baseline.
+
+    Detects the v0.2.x→v0.3.x upgrade case: legacy tables exist, but
+    `alembic_version` is absent or empty. Stamps to 0001_baseline so the next
+    `alembic_upgrade()` call skips re-creating tables that already exist and
+    proceeds straight to 0002+. No-op for greenfield installs (no tables) and
+    for already-migrated databases (alembic_version populated).
+    """
+    from sqlalchemy import inspect
+    from flask_migrate import stamp
+
+    insp = inspect(db.engine)
+    existing = set(insp.get_table_names())
+
+    has_legacy_tables = any(t in existing for t in _LEGACY_V02X_TABLES)
+    if not has_legacy_tables:
+        return  # greenfield — let alembic_upgrade() create everything from 0001
+
+    if 'alembic_version' in existing:
+        version = db.session.execute(
+            db.text('SELECT version_num FROM alembic_version')
+        ).scalar()
+        if version:
+            return  # already managed by alembic — leave alone
+
+    app.logger.warning(
+        'Detected legacy v0.2.x schema with no alembic_version. '
+        'Stamping database at 0001_baseline before applying migrations.'
+    )
+    stamp(revision='0001_baseline')
+
+
 def create_app():
     app = Flask(__name__, static_folder='static', static_url_path='')
     app.config.from_object(Config)
@@ -22,6 +63,7 @@ def create_app():
     with app.app_context():
         # Schema is owned by alembic. Apply pending migrations on startup so
         # docker installs upgrade transparently.
+        _stamp_legacy_db_if_needed(app)
         alembic_upgrade()
         from src.services.user_service import UserService
         UserService.bootstrap_master(app)
