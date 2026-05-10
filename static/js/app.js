@@ -2732,7 +2732,12 @@ const App = {
 
   async _confirmLinkTicket(docId, ticketId) {
     try {
-      await $.ajax({ url: `/api/documents/${docId}/links/${ticketId}`, method: 'POST' });
+      await $.ajax({
+        url: `/api/documents/${docId}/tickets`,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ ticket_id: ticketId }),
+      });
       $('#link-ticket-overlay').remove();
       // Update local currentDoc state
       if (this.currentDoc && this.currentDoc.id === docId) {
@@ -2748,7 +2753,7 @@ const App = {
 
   async unlinkDocTicket(docId, ticketId) {
     try {
-      await $.ajax({ url: `/api/documents/${docId}/links/${ticketId}`, method: 'DELETE' });
+      await $.ajax({ url: `/api/documents/${docId}/tickets/${ticketId}`, method: 'DELETE' });
       if (this.currentDoc && this.currentDoc.id === docId) {
         this.currentDoc.linked_ticket_ids = (this.currentDoc.linked_ticket_ids || []).filter(id => id !== ticketId);
       }
