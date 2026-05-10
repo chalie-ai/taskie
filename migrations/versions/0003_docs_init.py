@@ -118,8 +118,13 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_table('document_tags')
-    op.drop_table('tags')
-    op.drop_table('documents')
-    op.drop_table('document_versions')
-    op.drop_table('folders')
+    # if_exists guards make this revision safe to downgrade on environments
+    # that were stamped at 0003 before later tasks extended this migration
+    # (this revision grows across Tasks 4–8). Without these, a downgrade
+    # crashes on the first table that wasn't yet present when the dev
+    # originally ran upgrade.
+    op.drop_table('document_tags', if_exists=True)
+    op.drop_table('tags', if_exists=True)
+    op.drop_table('documents', if_exists=True)
+    op.drop_table('document_versions', if_exists=True)
+    op.drop_table('folders', if_exists=True)
