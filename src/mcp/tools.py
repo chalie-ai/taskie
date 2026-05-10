@@ -830,7 +830,9 @@ def call_tool(name: str, arguments: dict) -> str:
         elif name == "update_folder":
             fid = arguments['folder_id']
             data = {k: v for k, v in arguments.items()
-                    if k in ('name', 'parent_folder_id', 'sort_order') and v is not None}
+                    if k in ('name', 'sort_order') and v is not None}
+            if 'parent_folder_id' in arguments:
+                data['parent_folder_id'] = arguments['parent_folder_id']  # None means "move to root"
             r = client.patch(api_url(f'/folders/{fid}'), json=data)
             r.raise_for_status()
             return json.dumps(r.json(), indent=2)
@@ -875,7 +877,9 @@ def call_tool(name: str, arguments: dict) -> str:
         elif name == "update_document_metadata":
             did = arguments['document_id']
             data = {k: v for k, v in arguments.items()
-                    if k in ('title', 'folder_id', 'tags') and v is not None}
+                    if k in ('title', 'tags') and v is not None}
+            if 'folder_id' in arguments:
+                data['folder_id'] = arguments['folder_id']  # None means "move out of folder"
             r = client.patch(api_url(f'/documents/{did}'), json=data)
             r.raise_for_status()
             return json.dumps(r.json(), indent=2)
@@ -895,7 +899,8 @@ def call_tool(name: str, arguments: dict) -> str:
             return json.dumps({"deleted": True})
 
         elif name == "search_documents":
-            params = {k: v for k, v in arguments.items() if v is not None}
+            params = {k: v for k, v in arguments.items()
+                      if k in ('q', 'space', 'project_id', 'tag', 'limit') and v is not None}
             r = client.get(api_url('/documents/search'), params=params)
             r.raise_for_status()
             return json.dumps(r.json(), indent=2)
@@ -963,6 +968,11 @@ def call_tool(name: str, arguments: dict) -> str:
 
         elif name == "list_linked_tickets":
             did = arguments['document_id']
+            # We reuse GET /documents/<id> rather than adding a dedicated endpoint —
+            # linked_ticket_ids is unconditionally populated and the response size is
+            # bounded in practice (no FTS body in the doc serializer; current_version
+            # bodies tend to be small enough that an extra round-trip per surface
+            # isn't worth a new REST endpoint).
             r = client.get(api_url(f'/documents/{did}'))
             r.raise_for_status()
             doc = r.json()
@@ -974,7 +984,13 @@ def call_tool(name: str, arguments: dict) -> str:
             did = arguments['document_id']
             file_path = arguments['file_path']
             filename = arguments.get('filename') or os.path.basename(file_path)
-            with open(file_path, 'rb') as fh:
+            if not filename:
+                return json.dumps({'error': 'Could not determine filename from file_path; pass an explicit filename'})
+            try:
+                fh = open(file_path, 'rb')
+            except OSError as e:
+                return json.dumps({'error': f'Cannot open file: {e}'})
+            with fh:
                 files = {'file': (filename, fh)}
                 r = client.post(api_url(f'/documents/{did}/attachments'), files=files)
             if r.status_code >= 400:
