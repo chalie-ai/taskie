@@ -589,6 +589,19 @@ const App = {
       </div>
     `).join('');
 
+    const linkedDocs = t.linked_documents || [];
+    const linkedDocsHTML = linkedDocs.map(d => {
+      const spaceBadge = d.space_type === 'project'
+        ? `<span class="docs-link-space" title="Project doc">${this.esc((this.projects.find(p => p.id === d.project_id) || {}).name || 'Project')}</span>`
+        : `<span class="docs-link-space" title="Global doc">Global</span>`;
+      return `<div class="docs-link-row" data-doc-id="${d.id}" data-doc-space="${d.space_type}" data-doc-project="${d.project_id || ''}">
+        <span class="docs-link-icon">${I.doc}</span>
+        <span class="docs-link-title">${this.esc(d.title)}</span>
+        ${spaceBadge}
+        <button class="docs-link-remove" data-unlink-doc-id="${d.id}" data-unlink-ticket-id="${t.id}" title="Unlink">${I.close}</button>
+      </div>`;
+    }).join('');
+
     const panel = $(`
       <div class="panel-overlay" onclick="App.closePanel()"></div>
       <div class="panel">
@@ -649,6 +662,13 @@ const App = {
           </div>
           <div class="panel-section">
             <div class="panel-section-title rel-section-head">
+              <span>Linked documents · ${linkedDocs.length}</span>
+              <button class="btn btn-ghost" onclick="App.showLinkDocModal(${t.id})">+ Link doc</button>
+            </div>
+            <div id="panel-linked-docs">${linkedDocsHTML || '<div class="rel-empty">No linked documents yet.</div>'}</div>
+          </div>
+          <div class="panel-section">
+            <div class="panel-section-title rel-section-head">
               <span>Attachments · ${attachments.length}</span>
               <button class="btn btn-ghost" onclick="App.openAttachmentPicker(${t.id})">+ Add</button>
             </div>
@@ -692,6 +712,19 @@ const App = {
       e.preventDefault(); e.stopPropagation();
       const files = e.originalEvent.dataTransfer && e.originalEvent.dataTransfer.files;
       if (files && files.length) App.uploadAttachments(t.id, files);
+    });
+    // Linked-docs row navigation + unlink (delegated; data-attrs avoid XSS via title)
+    $('#panel-linked-docs').on('click', '.docs-link-remove', function(e) {
+      e.stopPropagation();
+      const docId = parseInt($(this).data('unlink-doc-id'));
+      const ticketId = parseInt($(this).data('unlink-ticket-id'));
+      App.unlinkTicketDoc(ticketId, docId);
+    });
+    $('#panel-linked-docs').on('click', '.docs-link-row', function() {
+      const docId = parseInt($(this).data('doc-id'));
+      const space = $(this).data('doc-space');
+      const projectId = $(this).data('doc-project');
+      App.openDocFromTicket(docId, space, projectId);
     });
   },
 
@@ -2760,6 +2793,135 @@ const App = {
       this.renderDocsPage();
     } catch (e) {
       alert('Failed to unlink ticket: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  // === Ticket-side linked-docs ===
+
+  // Navigate from the ticket panel to a linked doc.
+  openDocFromTicket(docId, spaceType, projectId) {
+    this.closePanel();
+    const target = spaceType === 'project' && projectId
+      ? `#docs/project/${projectId}/${docId}`
+      : `#docs/global/${docId}`;
+    if (window.location.hash === target) {
+      // Hash unchanged → router won't fire; navigate manually.
+      this.checkHash();
+    } else {
+      window.location.hash = target;
+    }
+  },
+
+  showLinkDocModal(ticketId) {
+    const alreadyLinked = new Set(
+      (this.ticketDetail && this.ticketDetail.id === ticketId
+        ? (this.ticketDetail.linked_documents || []).map(d => d.id)
+        : [])
+    );
+
+    const modal = $(`
+      <div class="cmd-overlay" style="z-index:1500" id="link-doc-overlay" onclick="if(event.target===this)$('#link-doc-overlay').remove()">
+        <div class="cmd" style="padding:20px">
+          <h3 style="font-weight:600;margin-bottom:12px">Link a document</h3>
+          <input class="cmd-input" id="link-doc-search" placeholder="Search documents…" autofocus
+            style="border:1px solid var(--border);border-radius:var(--radius);padding:7px 10px;width:100%;font-size:13px;font-family:inherit;outline:none;margin-bottom:8px">
+          <div class="cmd-list" id="link-doc-results" style="max-height:280px;overflow-y:auto">
+            <div style="padding:14px;color:var(--text-faint);font-size:12.5px;text-align:center">Type to search…</div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:10px">
+            <button class="btn btn-secondary" onclick="$('#link-doc-overlay').remove()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+    $('body').append(modal);
+
+    let xhr = null;
+    let debounceTimer = null;
+
+    const renderResults = (q) => {
+      if (xhr) { try { xhr.abort(); } catch (_) {} xhr = null; }
+      if (!q || q.length < 2) {
+        $('#link-doc-results').html('<div style="padding:14px;color:var(--text-faint);font-size:12.5px;text-align:center">Type at least 2 characters…</div>');
+        return;
+      }
+      $('#link-doc-results').html('<div style="padding:14px;color:var(--text-faint);font-size:12.5px;text-align:center"><div class="spinner" style="margin:0 auto"></div></div>');
+      xhr = $.ajax({
+        url: '/api/documents/search',
+        data: { q: q, limit: 20 },
+        success: (results) => {
+          const filtered = (results || []).filter(r => !alreadyLinked.has(r.id));
+          if (!filtered.length) {
+            $('#link-doc-results').html('<div style="padding:14px;color:var(--text-faint);font-size:12.5px;text-align:center">No matching documents</div>');
+            return;
+          }
+          $('#link-doc-results').html(filtered.map(r => {
+            const proj = r.space_type === 'project'
+              ? (this.projects.find(p => p.id === r.project_id) || {}).name || 'Project'
+              : 'Global';
+            return `<div class="cmd-row" data-link-doc-id="${r.id}">
+              <span style="flex-shrink:0">${I.doc}</span>
+              <span style="flex:1">${this.esc(r.title)}</span>
+              <span style="font-size:11px;color:var(--text-faint)">${this.esc(proj)}</span>
+            </div>`;
+          }).join(''));
+          $('#link-doc-results').off('click.linkdoc').on('click.linkdoc', '[data-link-doc-id]', function() {
+            const docId = parseInt($(this).data('link-doc-id'));
+            App._confirmLinkDocToTicket(docId, ticketId);
+          });
+        },
+        error: (e) => {
+          if (e.statusText === 'abort') return;
+          $('#link-doc-results').html('<div style="padding:14px;color:var(--p-high);font-size:12.5px;text-align:center">Search failed.</div>');
+        },
+      });
+    };
+
+    $('#link-doc-search').on('input', function() {
+      const q = $(this).val();
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => renderResults(q), 200);
+    });
+    $('#link-doc-search').on('keydown', function(e) {
+      if (e.key === 'Escape') $('#link-doc-overlay').remove();
+    });
+    setTimeout(() => $('#link-doc-search').focus(), 0);
+  },
+
+  async _confirmLinkDocToTicket(docId, ticketId) {
+    try {
+      await $.ajax({
+        url: `/api/documents/${docId}/tickets`,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ ticket_id: ticketId }),
+      });
+      $('#link-doc-overlay').remove();
+      await this._refreshTicketPanel(ticketId);
+    } catch (e) {
+      alert('Failed to link document: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  async unlinkTicketDoc(ticketId, docId) {
+    try {
+      await $.ajax({ url: `/api/documents/${docId}/tickets/${ticketId}`, method: 'DELETE' });
+      await this._refreshTicketPanel(ticketId);
+    } catch (e) {
+      alert('Failed to unlink document: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  async _refreshTicketPanel(ticketId) {
+    // Re-fetch with include_details so linked_documents is populated, then re-render.
+    try {
+      const fresh = await $.get(`/api/tickets/${ticketId}`);
+      this.ticketDetail = fresh;
+      // Replace existing panel without re-toggling overlay/scroll position.
+      $('.panel, .panel-overlay').remove();
+      this.showPanel(fresh);
+    } catch (e) {
+      console.error('Failed to refresh ticket panel:', e);
     }
   },
 

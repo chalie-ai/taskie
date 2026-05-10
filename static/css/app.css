@@ -753,6 +753,14 @@
     }
     .docs-link-remove:hover { background: var(--bg-hover); color: var(--p-high); }
     .docs-links-empty { color: var(--text-faint); font-size: 12.5px; padding: 6px 0; }
+    /* Used by ticket-panel "Linked documents" rows */
+    .docs-link-icon { display: inline-flex; align-items: center; color: var(--text-muted); flex-shrink: 0; }
+    .docs-link-title { flex: 1; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .docs-link-space {
+      font-size: 10.5px; color: var(--text-faint); padding: 1px 7px;
+      border: 1px solid var(--border); border-radius: 10px;
+      flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em;
+    }
 
     /* ── Attachments section ── */
     .docs-attachments { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 16px; }
