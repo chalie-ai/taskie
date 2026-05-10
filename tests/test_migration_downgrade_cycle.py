@@ -1,65 +1,84 @@
 """Regression test for migration 0003 SQLite-safe downgrade (commit 57aa86f).
 
-Runs upgrade→downgrade-to-base→upgrade again against a fresh isolated SQLite
-file so the in-memory test DB is not disturbed. Uses Flask-Migrate's Python API
-(flask_migrate.upgrade / flask_migrate.downgrade) because env.py is coupled to
-current_app — a raw Alembic Config outside the app context would not work.
+Runs the full upgrade→downgrade-to-base→upgrade cycle against a fresh isolated
+SQLite file in a SUBPROCESS so the suite's in-memory app fixture is not
+disturbed.
 
-This test is intentionally session-scoped on the app fixture but does NOT use
-the shared in-memory DB. It opens its own temporary file-backed SQLite, runs
-both directions, and tears it down.
+Why subprocess: env.py is hard-coupled to current_app.extensions['migrate'],
+so the only way to run migrations against an arbitrary URL without polluting
+the shared in-memory engine is to spawn a fresh Python process with a clean
+DATABASE_URL env var.
 """
 import os
+import subprocess
+import sys
 import tempfile
+from pathlib import Path
 
 import pytest
 
 
-def test_full_downgrade_upgrade_cycle(app):
-    """upgrade→downgrade base→upgrade must complete without errors on SQLite."""
-    from flask_migrate import upgrade as alembic_upgrade
-    from flask_migrate import downgrade as alembic_downgrade
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
-    # Use a temp file so we never touch the suite's in-memory schema.
+
+def _run_flask(args, env):
+    """Invoke `flask <args...>` in a subprocess from the repo root."""
+    full_env = {**os.environ, **env, 'FLASK_APP': 'app.py'}
+    return subprocess.run(
+        [sys.executable, '-m', 'flask', *args],
+        cwd=str(REPO_ROOT),
+        env=full_env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def test_full_downgrade_upgrade_cycle():
+    """upgrade→downgrade base→upgrade must complete without errors on SQLite."""
     fd, db_path = tempfile.mkstemp(suffix='.db', prefix='migration_cycle_')
     os.close(fd)
+    env = {'DATABASE_URL': f'sqlite:///{db_path}'}
+
     try:
-        # Reconfigure the app to point at the temp file for this test only.
-        original_url = app.config['SQLALCHEMY_DATABASE_URI']
-        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+        # Step 1: upgrade fresh DB to head
+        r = _run_flask(['db', 'upgrade'], env)
+        assert r.returncode == 0, (
+            f"Initial upgrade failed (exit {r.returncode})\n"
+            f"STDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
+        )
 
-        # Dispose the current engine pool so SQLAlchemy opens a fresh
-        # connection against the new URL.
-        from src.models import db as _db
-        with app.app_context():
-            _db.engine.dispose()
+        # Step 2: downgrade all the way back to base — this is the
+        # regression scenario (Task 8's ck_attachment_one_parent CHECK
+        # constraint used to fail batch_alter_table on SQLite)
+        r = _run_flask(['db', 'downgrade', 'base'], env)
+        assert r.returncode == 0, (
+            f"Downgrade to base failed (exit {r.returncode})\n"
+            f"STDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
+        )
 
+        # Step 3: upgrade again — verify schema rebuilds cleanly from empty
+        r = _run_flask(['db', 'upgrade'], env)
+        assert r.returncode == 0, (
+            f"Re-upgrade failed (exit {r.returncode})\n"
+            f"STDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
+        )
+
+        # Sanity check: docs tables present in the rebuilt DB
+        import sqlite3
+        conn = sqlite3.connect(db_path)
         try:
-            with app.app_context():
-                # Fresh DB: migrate up to head
-                alembic_upgrade(revision='head')
-
-                # Migrate all the way back to base (no tables should remain)
-                alembic_downgrade(revision='base')
-
-                # Migrate up again — this is the regression scenario
-                alembic_upgrade(revision='head')
-
-                # If we got here without raising, the cycle works.
-                # Assert the docs tables are present after re-upgrade.
-                from sqlalchemy import inspect
-                inspector = inspect(_db.engine)
-                tables = set(inspector.get_table_names())
-                for expected in ('folders', 'documents', 'document_versions',
-                                 'tags', 'document_tags', 'document_ticket_links'):
-                    assert expected in tables, \
-                        f"Table '{expected}' missing after downgrade→upgrade cycle"
-
+            tables = {row[0] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
         finally:
-            # Restore the original in-memory URL so remaining tests are unaffected.
-            app.config['SQLALCHEMY_DATABASE_URI'] = original_url
-            with app.app_context():
-                _db.engine.dispose()
+            conn.close()
+        for expected in ('folders', 'documents', 'document_versions',
+                         'tags', 'document_tags', 'document_ticket_links'):
+            assert expected in tables, (
+                f"Table '{expected}' missing after downgrade→upgrade cycle. "
+                f"Tables present: {sorted(tables)}"
+            )
 
     finally:
         try:
