@@ -181,11 +181,45 @@ def downgrade():
     # Undo the attachments polymorphic extension NEXT because the FK references
     # documents.id — the documents table must still exist when we drop the FK.
     op.drop_index('ix_attachments_document_id', table_name='attachments', if_exists=True)
-    with op.batch_alter_table('attachments') as batch:
-        batch.drop_constraint('ck_attachment_one_parent', type_='check')
-        batch.drop_constraint('fk_attachments_document', type_='foreignkey')
-        batch.drop_column('document_id')
-        batch.alter_column('ticket_id', nullable=False)
+    if bind.dialect.name == 'sqlite':
+        # SQLite cannot drop named CHECK constraints and doesn't support full
+        # ALTER TABLE; Alembic's batch recreate='always' still reads the old
+        # CHECK that references document_id and embeds it in the new DDL (which
+        # then fails because document_id no longer exists). Work around both
+        # limitations by manually rebuilding the table via raw SQL — copy the
+        # nine pre-0003 columns with ticket_id NOT NULL and no document_id column.
+        op.execute("""
+            CREATE TABLE _att_tmp (
+                id          INTEGER NOT NULL,
+                ticket_id   INTEGER NOT NULL,
+                filename    VARCHAR(255) NOT NULL,
+                content_type VARCHAR(120),
+                size_bytes  INTEGER NOT NULL,
+                storage_path VARCHAR(500) NOT NULL,
+                uploader_name VARCHAR(255),
+                user_id     INTEGER,
+                created_at  DATETIME,
+                PRIMARY KEY (id),
+                UNIQUE (storage_path),
+                FOREIGN KEY (ticket_id) REFERENCES tickets (id)
+            )
+        """)
+        op.execute("""
+            INSERT INTO _att_tmp
+                (id, ticket_id, filename, content_type, size_bytes,
+                 storage_path, uploader_name, user_id, created_at)
+            SELECT id, ticket_id, filename, content_type, size_bytes,
+                   storage_path, uploader_name, user_id, created_at
+              FROM attachments
+        """)
+        op.execute("DROP TABLE attachments")
+        op.execute("ALTER TABLE _att_tmp RENAME TO attachments")
+    else:
+        with op.batch_alter_table('attachments') as batch:
+            batch.drop_constraint('ck_attachment_one_parent', type_='check')
+            batch.drop_constraint('fk_attachments_document', type_='foreignkey')
+            batch.drop_column('document_id')
+            batch.alter_column('ticket_id', nullable=False)
 
     # if_exists guards make this revision safe to downgrade on environments
     # that were stamped at 0003 before later tasks extended this migration
