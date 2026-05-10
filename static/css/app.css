@@ -460,3 +460,118 @@
     .rel-section-head { display: flex; align-items: center; justify-content: space-between; }
     .rel-section-head button { font-size: 11px; padding: 2px 8px; }
     .rel-empty { color: var(--text-faint); font-size: 12.5px; padding: 8px 0; }
+
+    /* ── Docs layout ── */
+    .docs-layout { display: flex; height: 100%; overflow: hidden; }
+
+    .docs-tree {
+      width: 220px; flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 10px 8px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .docs-tree-actions {
+      display: flex; gap: 4px; margin-bottom: 6px;
+    }
+    .docs-tree-actions button { flex: 1; }
+
+    .docs-tree-folder { display: flex; flex-direction: column; }
+    .docs-tree-folder-row {
+      display: flex; align-items: center; gap: 4px;
+      padding: 4px 6px; border-radius: var(--radius-sm);
+      cursor: pointer; position: relative;
+      font-size: 12.5px; font-weight: 500; color: var(--text);
+      user-select: none;
+    }
+    .docs-tree-folder-row:hover { background: var(--bg-hover); }
+    .docs-tree-folder-row.active { background: var(--bg-active); }
+    .docs-tree-folder-row .docs-folder-chevron {
+      flex-shrink: 0; width: 12px; display: grid; place-items: center;
+      color: var(--text-faint);
+    }
+    .docs-tree-folder-row .docs-folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .docs-tree-folder-row .docs-item-more {
+      width: 20px; height: 20px; display: grid; place-items: center;
+      border-radius: 3px; color: var(--text-faint); background: none; border: none; cursor: pointer;
+      opacity: 0; flex-shrink: 0;
+    }
+    .docs-tree-folder-row:hover .docs-item-more { opacity: 1; }
+    .docs-tree-folder-row .docs-item-more:hover { background: var(--bg-active); color: var(--text); }
+
+    .docs-tree-children { padding-left: 14px; display: flex; flex-direction: column; gap: 1px; }
+    .docs-tree-folder.collapsed > .docs-tree-children { display: none; }
+
+    .docs-tree-doc {
+      display: flex; align-items: center; gap: 4px;
+      padding: 4px 6px; border-radius: var(--radius-sm);
+      cursor: pointer; position: relative;
+      font-size: 12.5px; color: var(--text);
+      user-select: none;
+    }
+    .docs-tree-doc:hover { background: var(--bg-hover); }
+    .docs-tree-doc.active { background: var(--bg-active); font-weight: 500; }
+    .docs-tree-doc .docs-doc-icon { flex-shrink: 0; color: var(--text-faint); }
+    .docs-tree-doc .docs-doc-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .docs-tree-doc .docs-item-more {
+      width: 20px; height: 20px; display: grid; place-items: center;
+      border-radius: 3px; color: var(--text-faint); background: none; border: none; cursor: pointer;
+      opacity: 0; flex-shrink: 0;
+    }
+    .docs-tree-doc:hover .docs-item-more { opacity: 1; }
+    .docs-tree-doc .docs-item-more:hover { background: var(--bg-active); color: var(--text); }
+
+    .docs-content {
+      flex: 1; min-width: 0;
+      padding: 24px 28px;
+      overflow-y: auto;
+    }
+
+    .docs-empty {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; gap: 10px;
+      color: var(--text-faint); font-size: 13.5px;
+    }
+    .docs-empty svg { opacity: 0.35; }
+
+    .docs-doc-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+    .docs-doc-title-h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--text); margin: 0; line-height: 1.25; }
+    .docs-doc-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+    .docs-breadcrumb { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+    .docs-breadcrumb span { color: var(--text-faint); }
+
+    .docs-doc-body { margin-top: 20px; font-size: 14px; line-height: 1.65; color: var(--text); }
+    .docs-doc-body h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 1.2em 0 0.5em; }
+    .docs-doc-body h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; margin: 1em 0 0.4em; }
+    .docs-doc-body h3 { font-size: 15px; font-weight: 600; margin: 0.9em 0 0.35em; }
+    .docs-doc-body h4 { font-size: 14px; font-weight: 600; margin: 0.8em 0 0.3em; }
+    .docs-doc-body p { margin: 0 0 0.75em; }
+    .docs-doc-body p:last-child { margin-bottom: 0; }
+    .docs-doc-body ul, .docs-doc-body ol { margin: 0 0 0.75em; padding-left: 24px; }
+    .docs-doc-body li { margin: 0.2em 0; }
+    .docs-doc-body code { font-family: var(--font-mono); font-size: 12.5px; background: var(--bg-sunken); padding: 2px 5px; border-radius: 3px; color: var(--text); }
+    .docs-doc-body pre { background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; overflow-x: auto; margin: 0 0 0.75em; }
+    .docs-doc-body pre code { background: none; padding: 0; font-size: 12.5px; }
+    .docs-doc-body blockquote { margin: 0 0 0.75em; padding: 0 0 0 14px; border-left: 3px solid var(--border); color: var(--text-muted); font-style: italic; }
+    .docs-doc-body a { color: var(--accent-text); text-decoration: underline; }
+    .docs-doc-body table { border-collapse: collapse; margin: 0 0 0.75em; width: 100%; }
+    .docs-doc-body th, .docs-doc-body td { border: 1px solid var(--border); padding: 6px 10px; font-size: 13px; text-align: left; }
+    .docs-doc-body th { background: var(--bg-sunken); font-weight: 600; }
+    .docs-doc-body hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+
+    /* Context menu (folder / doc) */
+    .docs-ctx-menu {
+      position: fixed; z-index: 1200;
+      background: var(--bg-elev); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow-md);
+      padding: 4px; min-width: 140px;
+    }
+    .docs-ctx-item {
+      display: block; width: 100%; text-align: left;
+      padding: 5px 10px; border-radius: var(--radius-sm);
+      font-size: 12.5px; color: var(--text); background: none; border: none; cursor: pointer;
+    }
+    .docs-ctx-item:hover { background: var(--bg-hover); }
+    .docs-ctx-item.danger { color: var(--p-high); }
+    .docs-ctx-item.danger:hover { background: oklch(0.97 0.015 25); }

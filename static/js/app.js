@@ -17,6 +17,8 @@ const I = {
   folder:   '<svg class="svg-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4.5a1 1 0 011-1h3.5l1 1.5H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1v-7.5z"/></svg>',
   pr:       '<svg class="svg-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><path d="M4 5.5v5"/><path d="M5.5 4H10a2 2 0 012 2v5"/></svg>',
   trash:    '<svg class="svg-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9M7 6.5v5M9 6.5v5"/></svg>',
+  doc:      '<svg class="svg-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h6l3 3v9a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M10 2v3h3"/></svg>',
+  folderOpen: '<svg class="svg-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4.5a1 1 0 011-1h3.5l1 1.5H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1v-7.5z"/></svg>',
 };
 
 const STATUSES = ['backlog','todo','progress','review','done','cancel'];
@@ -56,6 +58,15 @@ const App = {
   users: [],
   ticketDetail: null,
   filters: { status: null, priority: null, assignee_id: null, type: null },
+  // Docs state
+  docsContext: { space: 'global', project_id: null },
+  activeFolderId: null,
+  activeDocId: null,
+  folders: [],
+  docs: [],
+  currentDoc: null,
+  // Track which folders are collapsed (set of ids collapsed)
+  collapsedFolders: new Set(),
 
   async init() {
     if (!AUTH.token()) { this.showLogin(); return; }
@@ -126,10 +137,46 @@ const App = {
 
   checkHash() {
     const hash = window.location.hash;
-    const m = hash.match(/^#\/ticket\/(\d+)$/);
-    if (m) {
-      const tid = parseInt(m[1]);
+    // Ticket route
+    const mTicket = hash.match(/^#\/ticket\/(\d+)$/);
+    if (mTicket) {
+      const tid = parseInt(mTicket[1]);
       if (tid && !$('.panel').length) this.openTicket(tid);
+      return;
+    }
+    // Docs routes: #docs/global, #docs/global/<doc_id>,
+    //              #docs/project/<pid>, #docs/project/<pid>/<doc_id>
+    const mDocsGlobalDoc = hash.match(/^#docs\/global\/(\d+)$/);
+    if (mDocsGlobalDoc) {
+      const docId = parseInt(mDocsGlobalDoc[1]);
+      this.docsContext = { space: 'global', project_id: null };
+      this.view = 'docs-global';
+      this.loadDocsTree().then(() => this.openDoc(docId));
+      return;
+    }
+    const mDocsGlobal = hash.match(/^#docs\/global$/);
+    if (mDocsGlobal) {
+      this.docsContext = { space: 'global', project_id: null };
+      this.view = 'docs-global';
+      this.loadDocsTree();
+      return;
+    }
+    const mDocsProjDoc = hash.match(/^#docs\/project\/(\d+)\/(\d+)$/);
+    if (mDocsProjDoc) {
+      const pid = parseInt(mDocsProjDoc[1]);
+      const docId = parseInt(mDocsProjDoc[2]);
+      this.docsContext = { space: 'project', project_id: pid };
+      this.view = 'docs-project';
+      this.loadDocsTree().then(() => this.openDoc(docId));
+      return;
+    }
+    const mDocsProj = hash.match(/^#docs\/project\/(\d+)$/);
+    if (mDocsProj) {
+      const pid = parseInt(mDocsProj[1]);
+      this.docsContext = { space: 'project', project_id: pid };
+      this.view = 'docs-project';
+      this.loadDocsTree();
+      return;
     }
   },
 
@@ -151,7 +198,10 @@ const App = {
   render() {
     this.renderSidebar();
     const isTicketView = ['cycle','project','backlog'].includes(this.view);
+    const isDocsView = this.view === 'docs-global' || this.view === 'docs-project';
     $('#filterbar').toggle(isTicketView);
+    // Hide the topbar action buttons (New ticket / view tabs) in docs views
+    $('.topbar-actions').toggle(!isDocsView);
     if (this.view === 'projects') {
       this.renderProjectsPage();
     } else if (this.view === 'users') {
@@ -163,6 +213,8 @@ const App = {
       this.renderCrumbs();
       $('#content-area').html(this.backlogHTML());
       this.bindBacklogEvents();
+    } else if (isDocsView) {
+      this.renderDocsPage();
     } else {
       this.renderCrumbs();
       $('#content-area').html(this.mode === 'board' ? this.boardHTML() : this.listHTML());
@@ -221,6 +273,23 @@ const App = {
         <span class="sb-dot" style="background:${p.color}"></span><span class="sb-label">${p.name}</span><span class="sb-count">${count}</span>
       </button>`;
     }));
+
+    // Docs project list
+    if ($('#sb-docs-project-list').length) {
+      $('#sb-docs-project-list').html(this.projects.map(p => {
+        const isActive = this.view === 'docs-project' && this.docsContext.project_id === p.id;
+        const act = isActive ? ' active' : '';
+        return `<button class="sb-item${act}" onclick="App.setView('docs-project', ${p.id})">
+          <span class="sb-dot" style="background:${p.color}"></span>
+          <span class="sb-label">${this.esc(p.name)}</span>
+        </button>`;
+      }).join(''));
+    }
+
+    // Active state for docs-global
+    if (this.view === 'docs-global') {
+      $(`.sb-item.view-trigger[data-view="docs-global"]`).addClass('active');
+    }
 
     // Cycle list
     $('#sb-cycle-list').html(this.cycles.map(c => {
@@ -1367,7 +1436,35 @@ const App = {
   },
 
   // ── Navigation ──
-  setView(v) { this.view = v; this.activeProjectId = null; this.render(); },
+  setView(v, projectId) {
+    if (v === 'docs-global') {
+      this.view = 'docs-global';
+      this.activeProjectId = null;
+      this.docsContext = { space: 'global', project_id: null };
+      this.activeFolderId = null;
+      this.activeDocId = null;
+      this.currentDoc = null;
+      this.folders = [];
+      this.docs = [];
+      this.loadDocsTree();
+      return;
+    }
+    if (v === 'docs-project' && projectId) {
+      this.view = 'docs-project';
+      this.activeProjectId = null;
+      this.docsContext = { space: 'project', project_id: parseInt(projectId) };
+      this.activeFolderId = null;
+      this.activeDocId = null;
+      this.currentDoc = null;
+      this.folders = [];
+      this.docs = [];
+      this.loadDocsTree();
+      return;
+    }
+    this.view = v;
+    this.activeProjectId = null;
+    this.render();
+  },
   setCycle(id) { this.activeCycleId = id; this.view = 'cycle'; this.render(); },
   selectProject(id) { this.activeProjectId = id; this.view = 'project'; this.render(); },
   showProjectsView() { this.view = 'projects'; this.activeProjectId = null; this.render(); },
@@ -1633,6 +1730,432 @@ const App = {
     if (newV) return `set ${label} to ${fmt(newV)}`;
     if (oldV) return `cleared ${label} (was ${fmt(oldV)})`;
     return `updated ${label}`;
+  },
+
+  // ── Docs ──
+
+  async loadDocsTree() {
+    const ctx = this.docsContext;
+    const params = { space: ctx.space };
+    if (ctx.project_id) params.project_id = ctx.project_id;
+    try {
+      const [folders, docs] = await Promise.all([
+        $.get('/api/folders', params),
+        $.get('/api/documents', params),
+      ]);
+      this.folders = folders;
+      this.docs = docs;
+    } catch (e) {
+      console.error('loadDocsTree error:', e);
+      this.folders = [];
+      this.docs = [];
+    }
+    this.render();
+    return Promise.resolve();
+  },
+
+  renderDocsPage() {
+    const ctx = this.docsContext;
+    const isGlobal = ctx.space === 'global';
+    const proj = isGlobal ? null : this.projects.find(p => p.id === ctx.project_id);
+    const title = isGlobal ? 'Global docs' : (proj ? proj.name + ' docs' : 'Project docs');
+
+    // Update hash
+    let hashTarget;
+    if (isGlobal) {
+      hashTarget = this.activeDocId ? `#docs/global/${this.activeDocId}` : '#docs/global';
+    } else {
+      hashTarget = this.activeDocId
+        ? `#docs/project/${ctx.project_id}/${this.activeDocId}`
+        : `#docs/project/${ctx.project_id}`;
+    }
+    if (window.location.hash !== hashTarget) {
+      history.replaceState(null, '', hashTarget);
+    }
+
+    // Update crumbs
+    let crumbHtml = `<span class="crumb active">${this.esc(title)}</span>`;
+    if (!isGlobal && proj) {
+      crumbHtml = `<span class="crumb" onclick="App.showProjectsView()">Projects</span>
+        <span class="crumb-sep">${I.chevRight}</span>
+        <span class="crumb active">${this.esc(proj.name)} docs</span>`;
+    }
+    $('#crumbs').html(crumbHtml);
+
+    const treeHtml = this.buildDocTreeHtml(null, 0);
+
+    const contentHtml = this.currentDoc
+      ? this.buildDocViewerHtml(this.currentDoc)
+      : `<div class="docs-empty">
+           <svg width="40" height="40" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"><path d="M4 2h6l3 3v9a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M10 2v3h3"/><path d="M5 7h6M5 9.5h4"/></svg>
+           <div>Select or create a document</div>
+         </div>`;
+
+    $('#content-area').html(`
+      <div class="docs-layout">
+        <div class="docs-tree">
+          <div class="docs-tree-actions">
+            <button class="btn btn-secondary" style="font-size:11.5px;padding:4px 8px" onclick="App.createFolder(null)">
+              ${I.plus} Folder
+            </button>
+            <button class="btn btn-secondary" style="font-size:11.5px;padding:4px 8px" onclick="App.createDoc(null)">
+              ${I.plus} Doc
+            </button>
+          </div>
+          ${treeHtml || '<div style="color:var(--text-faint);font-size:12px;padding:4px 6px">No folders or documents yet</div>'}
+        </div>
+        <div class="docs-content">${contentHtml}</div>
+      </div>
+    `);
+
+    this.bindDocsEvents();
+  },
+
+  buildDocTreeHtml(parentFolderId, depth) {
+    let html = '';
+    // Folders at this level
+    const folders = this.folders.filter(f => {
+      if (parentFolderId === null) return !f.parent_folder_id;
+      return f.parent_folder_id === parentFolderId;
+    });
+    folders.forEach(f => {
+      const isCollapsed = this.collapsedFolders.has(f.id);
+      const isActive = this.activeFolderId === f.id;
+      const chevron = isCollapsed ? I.chevRight : I.chevDown;
+      const childHtml = this.buildDocTreeHtml(f.id, depth + 1);
+      html += `
+        <div class="docs-tree-folder${isCollapsed ? ' collapsed' : ''}" data-folder-id="${f.id}">
+          <div class="docs-tree-folder-row${isActive ? ' active' : ''}"
+               onclick="App.toggleFolder(${f.id})"
+               data-folder-id="${f.id}">
+            <span class="docs-folder-chevron">${chevron}</span>
+            <span class="docs-folder-icon">${I.folder}</span>
+            <span class="docs-folder-name" title="${this.esc(f.name)}">${this.esc(f.name)}</span>
+            <button class="docs-item-more" onclick="event.stopPropagation();App.showFolderMenu(event,${f.id})" title="More">${I.more}</button>
+          </div>
+          <div class="docs-tree-children">${childHtml}</div>
+        </div>`;
+    });
+    // Docs at this level (those with this folder_id)
+    const docs = this.docs.filter(d => {
+      if (parentFolderId === null) return !d.folder_id;
+      return d.folder_id === parentFolderId;
+    });
+    docs.forEach(d => {
+      const isActive = this.activeDocId === d.id;
+      html += `
+        <div class="docs-tree-doc${isActive ? ' active' : ''}"
+             onclick="App.openDoc(${d.id})"
+             data-doc-id="${d.id}">
+          <span class="docs-doc-icon">${I.doc}</span>
+          <span class="docs-doc-title" title="${this.esc(d.title)}">${this.esc(d.title)}</span>
+          <button class="docs-item-more" onclick="event.stopPropagation();App.showDocMenu(event,${d.id})" title="More">${I.more}</button>
+        </div>`;
+    });
+    return html;
+  },
+
+  buildDocViewerHtml(doc) {
+    const version = doc.current_version;
+    const bodyHtml = version && version.body_md ? this.md(version.body_md) : '<em style="color:var(--text-faint)">No content yet.</em>';
+    // Build breadcrumb
+    const breadcrumbs = this.buildFolderBreadcrumb(doc.folder_id);
+    const breadcrumbHtml = breadcrumbs.length
+      ? breadcrumbs.map(f => `<span class="crumb" style="cursor:pointer;color:var(--accent-text)" onclick="App.selectFolderInTree(${f.id})">${this.esc(f.name)}</span>`).join(`<span style="color:var(--text-faint)">${I.chevRight}</span>`)
+        + `<span style="color:var(--text-faint)">${I.chevRight}</span><span>${this.esc(doc.title)}</span>`
+      : `<span>${this.esc(doc.title)}</span>`;
+    const tags = doc.tags || [];
+    const tagsHtml = tags.length
+      ? tags.map(t => `<span style="display:inline-block;padding:2px 7px;border-radius:10px;background:var(--bg-sunken);border:1px solid var(--border);font-size:11px;color:var(--text-muted)">${this.esc(t.name)}</span>`).join('')
+      : '';
+    return `
+      <div class="docs-doc-header">
+        <h1 class="docs-doc-title-h1">${this.esc(doc.title)}</h1>
+        <div class="docs-doc-actions">
+          <button class="btn btn-secondary" style="font-size:12px" title="Edit (Part 2)" disabled>Edit</button>
+          <button class="btn-icon" onclick="App.deleteDoc(${doc.id})" title="Delete document" style="color:var(--p-high)">${I.trash}</button>
+        </div>
+      </div>
+      <div class="docs-breadcrumb">${breadcrumbHtml}</div>
+      ${tagsHtml ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px">${tagsHtml}</div>` : ''}
+      <div class="docs-doc-body">${bodyHtml}</div>
+    `;
+  },
+
+  buildFolderBreadcrumb(folderId) {
+    if (!folderId) return [];
+    const crumbs = [];
+    let current = folderId;
+    const seen = new Set();
+    while (current) {
+      if (seen.has(current)) break;
+      seen.add(current);
+      const folder = this.folders.find(f => f.id === current);
+      if (!folder) break;
+      crumbs.unshift(folder);
+      current = folder.parent_folder_id;
+    }
+    return crumbs;
+  },
+
+  bindDocsEvents() {
+    // Close any open context menus when clicking elsewhere
+    $(document).off('click.docs-ctx').on('click.docs-ctx', function(e) {
+      if (!$(e.target).closest('.docs-ctx-menu').length) {
+        $('.docs-ctx-menu').remove();
+      }
+    });
+  },
+
+  toggleFolder(folderId) {
+    if (this.collapsedFolders.has(folderId)) {
+      this.collapsedFolders.delete(folderId);
+    } else {
+      this.collapsedFolders.add(folderId);
+    }
+    this.activeFolderId = folderId;
+    this.renderDocsPage();
+  },
+
+  selectFolderInTree(folderId) {
+    // Expand it if collapsed
+    this.collapsedFolders.delete(folderId);
+    this.activeFolderId = folderId;
+    this.renderDocsPage();
+  },
+
+  showFolderMenu(event, folderId) {
+    event.stopPropagation();
+    $('.docs-ctx-menu').remove();
+    const folder = this.folders.find(f => f.id === folderId);
+    if (!folder) return;
+    const menu = $(`
+      <div class="docs-ctx-menu">
+        <button class="docs-ctx-item" onclick="App.renameFolder(${folderId})">Rename</button>
+        <button class="docs-ctx-item" onclick="App.createFolder(${folderId})">+ Subfolder</button>
+        <button class="docs-ctx-item" onclick="App.createDoc(${folderId})">+ Doc here</button>
+        <button class="docs-ctx-item danger" onclick="App.deleteFolder(${folderId})">Delete</button>
+      </div>
+    `);
+    $('body').append(menu);
+    const rect = event.target.getBoundingClientRect();
+    const menuEl = menu[0];
+    let top = rect.bottom + 2;
+    let left = rect.left;
+    if (left + 150 > window.innerWidth) left = window.innerWidth - 155;
+    if (top + 160 > window.innerHeight) top = rect.top - menuEl.offsetHeight - 2;
+    menu.css({ top: top + 'px', left: left + 'px' });
+  },
+
+  showDocMenu(event, docId) {
+    event.stopPropagation();
+    $('.docs-ctx-menu').remove();
+    const menu = $(`
+      <div class="docs-ctx-menu">
+        <button class="docs-ctx-item" onclick="App.openDoc(${docId})">Open</button>
+        <button class="docs-ctx-item danger" onclick="App.deleteDoc(${docId})">Delete</button>
+      </div>
+    `);
+    $('body').append(menu);
+    const rect = event.target.getBoundingClientRect();
+    let top = rect.bottom + 2;
+    let left = rect.left;
+    if (left + 150 > window.innerWidth) left = window.innerWidth - 155;
+    if (top + 100 > window.innerHeight) top = rect.top - menu[0].offsetHeight - 2;
+    menu.css({ top: top + 'px', left: left + 'px' });
+  },
+
+  async createFolder(parentFolderId) {
+    const name = prompt('Folder name:');
+    if (!name || !name.trim()) return;
+    const ctx = this.docsContext;
+    const body = {
+      name: name.trim(),
+      space_type: ctx.space,
+    };
+    if (ctx.project_id) body.project_id = ctx.project_id;
+    if (parentFolderId) body.parent_folder_id = parentFolderId;
+    try {
+      const folder = await $.ajax({
+        url: '/api/folders', method: 'POST',
+        contentType: 'application/json', data: JSON.stringify(body),
+      });
+      this.folders.push(folder);
+      // Auto-expand the parent
+      if (parentFolderId) this.collapsedFolders.delete(parentFolderId);
+      this.renderDocsPage();
+    } catch (e) {
+      alert('Failed to create folder: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  async renameFolder(folderId) {
+    const folder = this.folders.find(f => f.id === folderId);
+    if (!folder) return;
+    const name = prompt('New name:', folder.name);
+    if (!name || !name.trim() || name.trim() === folder.name) return;
+    try {
+      const updated = await $.ajax({
+        url: `/api/folders/${folderId}`, method: 'PATCH',
+        contentType: 'application/json', data: JSON.stringify({ name: name.trim() }),
+      });
+      const idx = this.folders.findIndex(f => f.id === folderId);
+      if (idx >= 0) this.folders[idx] = updated;
+      this.renderDocsPage();
+    } catch (e) {
+      alert('Failed to rename folder: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  async deleteFolder(folderId) {
+    const folder = this.folders.find(f => f.id === folderId);
+    if (!folder) return;
+    if (!confirm(`Delete folder "${folder.name}"?\n\nAll documents and subfolders will be deleted. This cannot be undone.`)) return;
+    try {
+      await $.ajax({ url: `/api/folders/${folderId}`, method: 'DELETE' });
+      // Remove folder and all descendants from local state
+      const removedIds = this.collectFolderIds(folderId);
+      this.folders = this.folders.filter(f => !removedIds.has(f.id));
+      this.docs = this.docs.filter(d => !d.folder_id || !removedIds.has(d.folder_id));
+      removedIds.forEach(id => this.collapsedFolders.delete(id));
+      if (removedIds.has(this.activeFolderId)) this.activeFolderId = null;
+      // If active doc was in one of those folders, clear it
+      if (this.currentDoc && this.currentDoc.folder_id && removedIds.has(this.currentDoc.folder_id)) {
+        this.currentDoc = null;
+        this.activeDocId = null;
+      }
+      this.renderDocsPage();
+    } catch (e) {
+      alert('Failed to delete folder: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  collectFolderIds(rootId) {
+    const ids = new Set([rootId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      this.folders.forEach(f => {
+        if (f.parent_folder_id && ids.has(f.parent_folder_id) && !ids.has(f.id)) {
+          ids.add(f.id);
+          changed = true;
+        }
+      });
+    }
+    return ids;
+  },
+
+  showCreateDocModal(folderId) {
+    const ctx = this.docsContext;
+    const folderOpts = ['<option value="">— No folder (root) —</option>']
+      .concat(this.folders.map(f => `<option value="${f.id}"${f.id === folderId ? ' selected' : ''}>${this.esc(f.name)}</option>`))
+      .join('');
+    const modal = $(`
+      <div class="cmd-overlay" style="z-index:1500" id="new-doc-overlay" onclick="if(event.target===this) $('#new-doc-overlay').remove()">
+        <div class="cmd" style="padding:20px;max-height:80vh;overflow-y:auto">
+          <h3 style="font-weight:600;margin-bottom:16px">New Document</h3>
+          <div class="mb-3">
+            <label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Title</label>
+            <input class="form-control" id="nd-title" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px">
+          </div>
+          <div class="mb-3">
+            <label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Folder</label>
+            <select class="form-select" id="nd-folder" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius)">${folderOpts}</select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Body (Markdown)</label>
+            <textarea class="form-control" id="nd-body" rows="8" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;font-family:var(--font-mono)"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Tags (comma-separated)</label>
+            <input class="form-control" id="nd-tags" placeholder="e.g. api, backend, reference" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px">
+          </div>
+          <div class="mb-3">
+            <label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Change note (optional)</label>
+            <input class="form-control" id="nd-note" placeholder="Initial version" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px">
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:8px">
+            <button class="btn btn-secondary" onclick="$('#new-doc-overlay').remove()">Cancel</button>
+            <button class="btn btn-primary" onclick="App.submitCreateDoc()">Create</button>
+          </div>
+        </div>
+      </div>
+    `);
+    $('body').append(modal);
+    $('#nd-title').focus();
+  },
+
+  createDoc(folderId) {
+    this.showCreateDocModal(folderId);
+  },
+
+  async submitCreateDoc() {
+    const title = $('#nd-title').val().trim();
+    if (!title) { alert('Title is required'); return; }
+    const ctx = this.docsContext;
+    const rawTags = $('#nd-tags').val().trim();
+    const tags = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : [];
+    const folderVal = $('#nd-folder').val();
+    const body = {
+      title,
+      space_type: ctx.space,
+      body_md: $('#nd-body').val() || '',
+      change_note: $('#nd-note').val().trim() || 'Initial version',
+      tags,
+    };
+    if (ctx.project_id) body.project_id = ctx.project_id;
+    if (folderVal) body.folder_id = parseInt(folderVal);
+    try {
+      const doc = await $.ajax({
+        url: '/api/documents', method: 'POST',
+        contentType: 'application/json', data: JSON.stringify(body),
+      });
+      this.docs.push(doc);
+      $('#new-doc-overlay').remove();
+      // Open the newly created doc
+      await this.openDoc(doc.id);
+    } catch (e) {
+      alert('Failed to create document: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  async openDoc(id) {
+    try {
+      const doc = await $.get(`/api/documents/${id}`);
+      this.currentDoc = doc;
+      this.activeDocId = doc.id;
+      // Expand the folder chain so the doc is visible in the tree
+      if (doc.folder_id) {
+        this.buildFolderBreadcrumb(doc.folder_id).forEach(f => this.collapsedFolders.delete(f.id));
+      }
+      this.renderDocsPage();
+    } catch (e) {
+      if (e.status === 404) {
+        alert('Document not found.');
+        this.currentDoc = null;
+        this.activeDocId = null;
+        this.renderDocsPage();
+      } else {
+        console.error('openDoc error:', e);
+      }
+    }
+  },
+
+  async deleteDoc(id) {
+    const doc = this.docs.find(d => d.id === id) || this.currentDoc;
+    const name = doc ? doc.title : `document #${id}`;
+    if (!confirm(`Delete "${name}"?\n\nThis will permanently remove the document and all its versions. This cannot be undone.`)) return;
+    try {
+      await $.ajax({ url: `/api/documents/${id}`, method: 'DELETE' });
+      this.docs = this.docs.filter(d => d.id !== id);
+      if (this.activeDocId === id) {
+        this.activeDocId = null;
+        this.currentDoc = null;
+      }
+      this.renderDocsPage();
+    } catch (e) {
+      alert('Failed to delete document: ' + (e.responseJSON?.error || e.statusText));
+    }
   },
 
   relDate(d) {
