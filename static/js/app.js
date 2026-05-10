@@ -67,6 +67,12 @@ const App = {
   currentDoc: null,
   // Track which folders are collapsed (set of ids collapsed)
   collapsedFolders: new Set(),
+  // Editor state
+  editorMode: false,
+  editorDirty: false,
+  editorTags: [],
+  // Version history panel open/closed
+  versionsOpen: false,
 
   async init() {
     if (!AUTH.token()) { this.showLogin(); return; }
@@ -1784,16 +1790,30 @@ const App = {
 
     const treeHtml = this.buildDocTreeHtml(null, 0);
 
-    const contentHtml = this.currentDoc
-      ? this.buildDocViewerHtml(this.currentDoc)
-      : `<div class="docs-empty">
+    let contentHtml;
+    if (this.editorMode && this.currentDoc) {
+      contentHtml = this.buildDocEditorHtml(this.currentDoc);
+    } else if (this.currentDoc) {
+      contentHtml = this.buildDocViewerHtml(this.currentDoc);
+    } else {
+      contentHtml = `<div class="docs-empty">
            <svg width="40" height="40" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"><path d="M4 2h6l3 3v9a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M10 2v3h3"/><path d="M5 7h6M5 9.5h4"/></svg>
            <div>Select or create a document</div>
          </div>`;
+    }
+
+    // Search bar HTML
+    const searchBarHtml = `
+      <div class="docs-search-wrap">
+        <span class="docs-search-icon">${I.search}</span>
+        <input class="docs-search" id="docs-search-input" placeholder="Search docs…" autocomplete="off">
+        <div class="docs-search-results" id="docs-search-results" style="display:none"></div>
+      </div>`;
 
     $('#content-area').html(`
       <div class="docs-layout">
         <div class="docs-tree">
+          ${searchBarHtml}
           <div class="docs-tree-actions">
             <button class="btn btn-secondary" style="font-size:11.5px;padding:4px 8px" onclick="App.createFolder(null)">
               ${I.plus} Folder
@@ -1804,11 +1824,19 @@ const App = {
           </div>
           ${treeHtml || '<div style="color:var(--text-faint);font-size:12px;padding:4px 6px">No folders or documents yet</div>'}
         </div>
-        <div class="docs-content">${contentHtml}</div>
+        <div class="docs-content" id="docs-content-pane">${contentHtml}</div>
       </div>
     `);
 
     this.bindDocsEvents();
+
+    // Async load attachments and versions after DOM is set
+    if (this.currentDoc && !this.editorMode) {
+      this.loadDocAttachmentsInline(this.currentDoc.id);
+      if (this.versionsOpen) {
+        this.loadVersionsInline(this.currentDoc.id);
+      }
+    }
   },
 
   buildDocTreeHtml(parentFolderId, depth) {
@@ -1866,19 +1894,75 @@ const App = {
       : `<span>${this.esc(doc.title)}</span>`;
     const tags = doc.tags || [];
     const tagsHtml = tags.length
-      ? tags.map(t => `<span style="display:inline-block;padding:2px 7px;border-radius:10px;background:var(--bg-sunken);border:1px solid var(--border);font-size:11px;color:var(--text-muted)">${this.esc(t.name)}</span>`).join('')
+      ? tags.map(t => `<span class="docs-tag-viewer-pill">${this.esc(t.name)}</span>`).join('')
       : '';
+
+    // Linked tickets
+    const linkedIds = doc.linked_ticket_ids || [];
+    const linkedHtml = linkedIds.length
+      ? linkedIds.map(tid => {
+          const t = this.tickets.find(x => x.id === tid);
+          if (t) {
+            return `<div class="docs-link-row" onclick="App.openTicket(${t.id})">
+              <span class="dot ${STATUS_DOT[t.status] || 'dot-backlog'}" style="width:7px;height:7px;border-radius:50%;flex-shrink:0"></span>
+              <span class="docs-link-id">${this.esc(t.display_id)}</span>
+              <span class="docs-link-name">${this.esc(t.name)}</span>
+              <button class="docs-link-remove" onclick="event.stopPropagation();App.unlinkDocTicket(${doc.id},${t.id})" title="Unlink">${I.close}</button>
+            </div>`;
+          }
+          return `<div class="docs-link-row">
+            <span class="docs-link-id">Ticket #${tid}</span>
+            <span class="docs-link-name" style="color:var(--text-faint)">Loading…</span>
+            <button class="docs-link-remove" onclick="event.stopPropagation();App.unlinkDocTicket(${doc.id},${tid})" title="Unlink">${I.close}</button>
+          </div>`;
+        }).join('')
+      : `<div class="docs-links-empty">No linked tickets yet.</div>`;
+
+    // Attachments placeholder — will be loaded async
+    const attachmentsHtml = `<div id="docs-attachments-list"><div style="color:var(--text-faint);font-size:12px"><span class="spinner" style="margin-right:6px"></span>Loading…</div></div>`;
+
+    // Version history (toggle)
+    const versionsSection = this.versionsOpen
+      ? `<div id="docs-versions-panel"><div style="color:var(--text-faint);font-size:12px"><span class="spinner" style="margin-right:6px"></span>Loading…</div></div>`
+      : '';
+
     return `
       <div class="docs-doc-header">
         <h1 class="docs-doc-title-h1">${this.esc(doc.title)}</h1>
         <div class="docs-doc-actions">
-          <button class="btn btn-secondary" style="font-size:12px" title="Edit (Part 2)" disabled>Edit</button>
+          <button class="btn btn-secondary" style="font-size:12px" onclick="App.editDoc(${doc.id})">${I.pencil} Edit</button>
+          <button class="btn btn-secondary" style="font-size:12px" id="docs-versions-btn" onclick="App.toggleVersionPanel(${doc.id})" title="Version history">${I.list} History</button>
           <button class="btn-icon" onclick="App.deleteDoc(${doc.id})" title="Delete document" style="color:var(--p-high)">${I.trash}</button>
         </div>
       </div>
       <div class="docs-breadcrumb">${breadcrumbHtml}</div>
       ${tagsHtml ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px">${tagsHtml}</div>` : ''}
       <div class="docs-doc-body">${bodyHtml}</div>
+
+      ${this.versionsOpen ? `<div class="docs-versions">
+        <div class="docs-versions-header">
+          <span class="docs-versions-title">Version history</span>
+          <button class="btn btn-ghost" style="font-size:11.5px;padding:2px 8px" onclick="App.toggleVersionPanel(${doc.id})">Close</button>
+        </div>
+        ${versionsSection}
+      </div>` : ''}
+
+      <div class="docs-links">
+        <div class="docs-links-header">
+          <span class="docs-links-title">Linked tickets · ${linkedIds.length}</span>
+          <button class="btn btn-ghost" style="font-size:11.5px;padding:2px 8px" onclick="App.showLinkTicketModal(${doc.id})">+ Link ticket</button>
+        </div>
+        ${linkedHtml}
+      </div>
+
+      <div class="docs-attachments">
+        <div class="docs-attachments-header">
+          <span class="docs-attachments-title">Attachments</span>
+          <button class="btn btn-ghost" style="font-size:11.5px;padding:2px 8px" onclick="App.openDocAttachmentPicker(${doc.id})">+ Upload</button>
+        </div>
+        ${attachmentsHtml}
+        <input type="file" id="doc-attachment-input" multiple style="display:none" onchange="App.uploadDocAttachments(${doc.id},this.files)">
+      </div>
     `;
   },
 
@@ -1904,6 +1988,23 @@ const App = {
       if (!$(e.target).closest('.docs-ctx-menu').length) {
         $('.docs-ctx-menu').remove();
       }
+      // Close search results when clicking outside
+      if (!$(e.target).closest('.docs-search-wrap').length) {
+        $('#docs-search-results').hide();
+      }
+    });
+
+    // Search bar
+    let searchDebounce = null;
+    $(document).off('input.docs-search').on('input.docs-search', '#docs-search-input', () => {
+      const q = $('#docs-search-input').val().trim();
+      clearTimeout(searchDebounce);
+      if (!q) { $('#docs-search-results').hide(); return; }
+      searchDebounce = setTimeout(() => App.doDocsSearch(q), 300);
+    });
+
+    $(document).off('keydown.docs-search').on('keydown.docs-search', '#docs-search-input', function(e) {
+      if (e.key === 'Escape') { $(this).val(''); $('#docs-search-results').hide(); }
     });
   },
 
@@ -2120,6 +2221,14 @@ const App = {
   },
 
   async openDoc(id) {
+    // Guard dirty editor
+    if (this.editorMode && this.editorDirty && this.activeDocId !== id) {
+      if (!confirm('Discard unsaved changes?')) return;
+    }
+    this.editorMode = false;
+    this.editorDirty = false;
+    this.editorTags = [];
+    this.versionsOpen = false;
     try {
       const doc = await $.get(`/api/documents/${id}`);
       this.currentDoc = doc;
@@ -2151,10 +2260,498 @@ const App = {
       if (this.activeDocId === id) {
         this.activeDocId = null;
         this.currentDoc = null;
+        this.editorMode = false;
+        this.editorDirty = false;
+        this.editorTags = [];
+        this.versionsOpen = false;
+        $(document).off('click.editor-tags');
       }
       this.renderDocsPage();
     } catch (e) {
       alert('Failed to delete document: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  // ── Docs search ──
+
+  async doDocsSearch(q) {
+    const ctx = this.docsContext;
+    const params = { q, limit: 20 };
+    if (ctx.space) params.space = ctx.space;
+    if (ctx.project_id) params.project_id = ctx.project_id;
+    try {
+      const results = await $.get('/api/documents/search', params);
+      const $res = $('#docs-search-results');
+      if (!results.length) {
+        $res.html('<div class="docs-search-empty">No matches</div>').show();
+        return;
+      }
+      $res.html(results.map(r => {
+        // Allow <mark> tags in snippet — sanitize with DOMPurify allowing mark
+        const safeSnippet = typeof DOMPurify !== 'undefined'
+          ? DOMPurify.sanitize(r.snippet || '', { ALLOWED_TAGS: ['mark'], ALLOWED_ATTR: [] })
+          : this.esc(r.snippet || '');
+        return `<div class="docs-search-result-row" onclick="App.selectSearchResult(${r.id})">
+          <div class="docs-search-result-title">${this.esc(r.title)}</div>
+          ${safeSnippet ? `<div class="docs-search-result-snippet">${safeSnippet}</div>` : ''}
+        </div>`;
+      }).join('')).show();
+    } catch (e) {
+      console.error('docs search error:', e);
+      $('#docs-search-results').html('<div class="docs-search-empty">Search failed</div>').show();
+    }
+  },
+
+  selectSearchResult(docId) {
+    $('#docs-search-input').val('');
+    $('#docs-search-results').hide();
+    this.openDoc(docId);
+  },
+
+  // ── Doc editor ──
+
+  buildDocEditorHtml(doc) {
+    const version = doc.current_version;
+    const currentBody = version ? (version.body_md || '') : '';
+    const currentTitle = doc.title || '';
+    const tagsHtml = this.editorTags.map((name, i) =>
+      `<span class="docs-tag-pill">
+        ${this.esc(name)}
+        <button onclick="App.removeEditorTag(${i})" title="Remove tag">×</button>
+      </span>`
+    ).join('');
+    return `
+      <div class="docs-editor">
+        <input class="docs-editor-title-input" id="editor-title" value="${this.esc(currentTitle)}" placeholder="Document title…">
+        <div>
+          <div style="font-size:11.5px;color:var(--text-faint);margin-bottom:4px;font-weight:500">Tags</div>
+          <div class="docs-tag-input-wrap" id="editor-tag-wrap" onclick="document.getElementById('editor-tag-input').focus()">
+            ${tagsHtml}
+            <input class="docs-tag-type-input" id="editor-tag-input" placeholder="${this.editorTags.length ? '' : 'Add tag…'}" autocomplete="off">
+            <div class="docs-tag-suggestions" id="editor-tag-suggestions" style="display:none"></div>
+          </div>
+        </div>
+        <div>
+          <div class="docs-editor-hint">Markdown supported — preview below</div>
+          <textarea class="docs-editor-textarea" id="editor-body" placeholder="Start writing…">${this.esc(currentBody)}</textarea>
+        </div>
+        <div class="docs-editor-preview">
+          <div class="docs-editor-preview-label">Preview</div>
+          <div class="docs-doc-body" id="editor-preview">${this.md(currentBody)}</div>
+        </div>
+        <div>
+          <input class="docs-editor-change-note" id="editor-change-note" placeholder="Optional change note">
+        </div>
+        <div class="docs-editor-actions">
+          <button class="btn btn-primary" onclick="App.saveDocEdit(${doc.id})">Save</button>
+          <button class="btn btn-secondary" onclick="App.cancelDocEdit(${doc.id})">Cancel</button>
+          <span id="editor-save-error" style="color:var(--p-high);font-size:12px;margin-left:8px"></span>
+        </div>
+      </div>
+    `;
+  },
+
+  editDoc(id) {
+    if (this.editorMode && this.activeDocId === id) return;
+    const doc = this.currentDoc;
+    if (!doc || doc.id !== id) return;
+    this.editorMode = true;
+    this.editorDirty = false;
+    // Copy current tags into working array
+    this.editorTags = (doc.tags || []).map(t => t.name);
+    this.renderDocsPage();
+    // Bind editor events after DOM is ready
+    this._bindEditorEvents(id, doc);
+  },
+
+  _bindEditorEvents(docId, doc) {
+    // Mark dirty on any input change
+    $('#editor-title, #editor-body, #editor-change-note').on('input', () => {
+      this.editorDirty = true;
+    });
+
+    // Live preview with debounce
+    let previewDebounce = null;
+    $('#editor-body').on('input', () => {
+      clearTimeout(previewDebounce);
+      previewDebounce = setTimeout(() => {
+        const val = $('#editor-body').val();
+        $('#editor-preview').html(this.md(val));
+      }, 250);
+    });
+
+    // Tag autocomplete
+    let tagDebounce = null;
+    $('#editor-tag-input').on('input', () => {
+      this.editorDirty = true;
+      const q = $('#editor-tag-input').val().trim().toLowerCase();
+      clearTimeout(tagDebounce);
+      if (!q) { $('#editor-tag-suggestions').hide(); return; }
+      tagDebounce = setTimeout(() => App._fetchTagSuggestions(q), 200);
+    });
+
+    $('#editor-tag-input').on('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = $('#editor-tag-input').val().trim().toLowerCase();
+        if (val) this.addEditorTag(val);
+      } else if (e.key === 'Escape') {
+        $('#editor-tag-suggestions').hide();
+      }
+    });
+
+    // Click outside tag suggestions to close
+    $(document).off('click.editor-tags').on('click.editor-tags', (e) => {
+      if (!$(e.target).closest('#editor-tag-wrap').length) {
+        $('#editor-tag-suggestions').hide();
+      }
+    });
+  },
+
+  async _fetchTagSuggestions(prefix) {
+    try {
+      const tags = await $.get('/api/tags', { prefix });
+      const existing = new Set(this.editorTags);
+      const filtered = tags.filter(t => !existing.has(t.name)).slice(0, 8);
+      if (!filtered.length) { $('#editor-tag-suggestions').hide(); return; }
+      $('#editor-tag-suggestions').html(
+        filtered.map(t =>
+          `<div class="docs-tag-suggestion-item" onclick="App.addEditorTag('${this.esc(t.name)}')">${this.esc(t.name)}</div>`
+        ).join('')
+      ).show();
+    } catch (e) {
+      console.error('tag fetch error:', e);
+    }
+  },
+
+  addEditorTag(name) {
+    const lower = name.toLowerCase().trim();
+    if (!lower) return;
+    if (this.editorTags.includes(lower)) return;
+    this.editorTags.push(lower);
+    this.editorDirty = true;
+    $('#editor-tag-suggestions').hide();
+    $('#editor-tag-input').val('').focus();
+    // Re-render the tag pills area without full page render
+    const tagsHtml = this.editorTags.map((n, i) =>
+      `<span class="docs-tag-pill">
+        ${this.esc(n)}
+        <button onclick="App.removeEditorTag(${i})" title="Remove tag">×</button>
+      </span>`
+    ).join('');
+    const $wrap = $('#editor-tag-wrap');
+    // Remove existing pills, keep the input and suggestions
+    $wrap.find('.docs-tag-pill').remove();
+    $wrap.prepend(tagsHtml);
+  },
+
+  removeEditorTag(index) {
+    this.editorTags.splice(index, 1);
+    this.editorDirty = true;
+    // Re-render pills
+    const tagsHtml = this.editorTags.map((n, i) =>
+      `<span class="docs-tag-pill">
+        ${this.esc(n)}
+        <button onclick="App.removeEditorTag(${i})" title="Remove tag">×</button>
+      </span>`
+    ).join('');
+    const $wrap = $('#editor-tag-wrap');
+    $wrap.find('.docs-tag-pill').remove();
+    $wrap.prepend(tagsHtml);
+  },
+
+  async saveDocEdit(docId) {
+    const doc = this.currentDoc;
+    if (!doc || doc.id !== docId) return;
+    const newTitle = $('#editor-title').val().trim();
+    const newBody = $('#editor-body').val();
+    const changeNote = $('#editor-change-note').val().trim();
+
+    if (!newTitle) {
+      $('#editor-save-error').text('Title is required');
+      return;
+    }
+
+    try {
+      // Step 1: If tags changed, PATCH document metadata
+      const originalTagNames = (doc.tags || []).map(t => t.name).sort().join(',');
+      const newTagNames = [...this.editorTags].sort().join(',');
+      if (originalTagNames !== newTagNames) {
+        await $.ajax({
+          url: `/api/documents/${docId}`, method: 'PATCH',
+          contentType: 'application/json',
+          data: JSON.stringify({ tags: this.editorTags }),
+        });
+      }
+
+      // Step 2: POST new version (always — even if only tags changed, to record title change)
+      const versionBody = { body_md: newBody };
+      if (newTitle !== doc.title) versionBody.title = newTitle;
+      if (changeNote) versionBody.change_note = changeNote;
+      await $.ajax({
+        url: `/api/documents/${docId}/versions`, method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(versionBody),
+      });
+
+      this.editorMode = false;
+      this.editorDirty = false;
+      this.editorTags = [];
+      $(document).off('click.editor-tags');
+      await this.openDoc(docId);
+    } catch (e) {
+      const msg = e.responseJSON?.error || e.statusText || 'Save failed';
+      $('#editor-save-error').text(msg);
+    }
+  },
+
+  cancelDocEdit(docId) {
+    if (this.editorDirty && !confirm('Discard unsaved changes?')) return;
+    this.editorMode = false;
+    this.editorDirty = false;
+    this.editorTags = [];
+    $(document).off('click.editor-tags');
+    this.openDoc(docId);
+  },
+
+  // ── Version history ──
+
+  toggleVersionPanel(docId) {
+    this.versionsOpen = !this.versionsOpen;
+    this.renderDocsPage();
+    if (this.versionsOpen) {
+      this.loadVersionsInline(docId);
+    }
+  },
+
+  async loadVersionsInline(docId) {
+    try {
+      const versions = await $.get(`/api/documents/${docId}/versions`);
+      const doc = this.currentDoc;
+      const currentVersionId = doc && doc.current_version ? doc.current_version.id : null;
+      const html = versions.length
+        ? versions.map(v => {
+            const isCurrent = v.id === currentVersionId;
+            return `<div class="docs-version-row">
+              <span class="docs-version-badge">v${v.version_number}</span>
+              ${isCurrent ? '<span class="docs-version-current-badge">current</span>' : ''}
+              ${v.title && v.title !== doc.title ? `<span style="font-weight:500;font-size:12px">${this.esc(v.title)}</span>` : ''}
+              <span class="docs-version-note">${this.esc(v.change_note || '')}</span>
+              <span class="docs-version-time">${this.relDateTime(v.created_at)}</span>
+              <div class="docs-version-actions">
+                <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px" onclick="App.viewVersion(${docId},${v.id})">View</button>
+                ${!isCurrent ? `<button class="btn btn-ghost" style="font-size:11px;padding:2px 6px" onclick="App.rollbackVersion(${docId},${v.id},${v.version_number})">Roll back</button>` : ''}
+              </div>
+            </div>`;
+          }).join('')
+        : '<div style="color:var(--text-faint);font-size:12.5px;padding:6px 0">No versions yet.</div>';
+      $('#docs-versions-panel').html(html);
+    } catch (e) {
+      $('#docs-versions-panel').html('<div style="color:var(--p-high);font-size:12px">Failed to load versions.</div>');
+    }
+  },
+
+  async viewVersion(docId, versionId) {
+    try {
+      const v = await $.get(`/api/documents/${docId}/versions/${versionId}`);
+      const bodyHtml = v.body_md ? this.md(v.body_md) : '<em style="color:var(--text-faint)">Empty version.</em>';
+      const modal = $(`
+        <div class="cmd-overlay" style="z-index:1500" id="version-view-overlay" onclick="if(event.target===this)$('#version-view-overlay').remove()">
+          <div class="cmd" style="padding:20px;max-height:80vh;overflow-y:auto;width:min(720px,92vw)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <div>
+                <span style="font-family:var(--font-mono);font-size:12px;color:var(--text-faint)">v${v.version_number}</span>
+                <span style="font-weight:600;font-size:15px;margin-left:8px">${this.esc(v.title || '')}</span>
+              </div>
+              <button class="btn-icon" onclick="$('#version-view-overlay').remove()">${I.close}</button>
+            </div>
+            ${v.change_note ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;font-style:italic">${this.esc(v.change_note)}</div>` : ''}
+            <div style="font-size:12px;color:var(--text-faint);margin-bottom:16px">${this.relDateTime(v.created_at)} · ${this.esc(v.created_by || '')}</div>
+            <div class="docs-doc-body">${bodyHtml}</div>
+          </div>
+        </div>
+      `);
+      $('body').append(modal);
+    } catch (e) {
+      alert('Failed to load version: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  async rollbackVersion(docId, versionId, versionNumber) {
+    if (!confirm(`Roll back to v${versionNumber}? This creates a new current version pointing to v${versionNumber}'s content.`)) return;
+    try {
+      await $.ajax({
+        url: `/api/documents/${docId}/rollback`, method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ version_id: versionId }),
+      });
+      this.versionsOpen = false;
+      await this.openDoc(docId);
+    } catch (e) {
+      alert('Rollback failed: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  // ── Doc tag management (editor) ──
+
+  // ── Doc-ticket links ──
+
+  showLinkTicketModal(docId) {
+    const modal = $(`
+      <div class="cmd-overlay" style="z-index:1500" id="link-ticket-overlay" onclick="if(event.target===this)$('#link-ticket-overlay').remove()">
+        <div class="cmd" style="padding:20px">
+          <h3 style="font-weight:600;margin-bottom:12px">Link a ticket</h3>
+          <input class="cmd-input" id="link-ticket-search" placeholder="Search by ID or name…" autofocus style="border:1px solid var(--border);border-radius:var(--radius);padding:7px 10px;width:100%;font-size:13px;font-family:inherit;outline:none;margin-bottom:8px">
+          <div class="cmd-list" id="link-ticket-results" style="max-height:260px;overflow-y:auto"></div>
+          <div style="display:flex;justify-content:flex-end;margin-top:10px">
+            <button class="btn btn-secondary" onclick="$('#link-ticket-overlay').remove()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+    $('body').append(modal);
+
+    const alreadyLinked = new Set(this.currentDoc ? (this.currentDoc.linked_ticket_ids || []) : []);
+
+    const renderResults = (q) => {
+      const lower = q.toLowerCase();
+      const filtered = this.tickets.filter(t =>
+        !alreadyLinked.has(t.id) &&
+        (t.display_id.toLowerCase().includes(lower) || t.name.toLowerCase().includes(lower))
+      ).slice(0, 10);
+      if (!filtered.length) {
+        $('#link-ticket-results').html('<div style="padding:10px;color:var(--text-faint);font-size:12.5px;text-align:center">No matching tickets</div>');
+        return;
+      }
+      $('#link-ticket-results').html(filtered.map(t => `
+        <div class="cmd-row" onclick="App._confirmLinkTicket(${docId},${t.id})">
+          <span class="dot ${STATUS_DOT[t.status] || 'dot-backlog'}" style="width:7px;height:7px;border-radius:50%;flex-shrink:0"></span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-faint)">${this.esc(t.display_id)}</span>
+          <span style="flex:1">${this.esc(t.name)}</span>
+        </div>
+      `).join(''));
+    };
+
+    renderResults('');
+
+    $('#link-ticket-search').on('input', function() {
+      renderResults($(this).val());
+    });
+    $('#link-ticket-search').on('keydown', function(e) {
+      if (e.key === 'Escape') $('#link-ticket-overlay').remove();
+    });
+    setTimeout(() => $('#link-ticket-search').focus(), 0);
+  },
+
+  async _confirmLinkTicket(docId, ticketId) {
+    try {
+      await $.ajax({ url: `/api/documents/${docId}/links/${ticketId}`, method: 'POST' });
+      $('#link-ticket-overlay').remove();
+      // Update local currentDoc state
+      if (this.currentDoc && this.currentDoc.id === docId) {
+        const ids = this.currentDoc.linked_ticket_ids || [];
+        if (!ids.includes(ticketId)) ids.push(ticketId);
+        this.currentDoc.linked_ticket_ids = ids;
+      }
+      this.renderDocsPage();
+    } catch (e) {
+      alert('Failed to link ticket: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  async unlinkDocTicket(docId, ticketId) {
+    try {
+      await $.ajax({ url: `/api/documents/${docId}/links/${ticketId}`, method: 'DELETE' });
+      if (this.currentDoc && this.currentDoc.id === docId) {
+        this.currentDoc.linked_ticket_ids = (this.currentDoc.linked_ticket_ids || []).filter(id => id !== ticketId);
+      }
+      this.renderDocsPage();
+    } catch (e) {
+      alert('Failed to unlink ticket: ' + (e.responseJSON?.error || e.statusText));
+    }
+  },
+
+  // ── Doc attachments ──
+
+  openDocAttachmentPicker(docId) {
+    $('#doc-attachment-input').trigger('click');
+  },
+
+  async loadDocAttachmentsInline(docId) {
+    try {
+      const attachments = await $.get(`/api/documents/${docId}/attachments`);
+      const html = attachments.length
+        ? attachments.map(a => `
+          <div class="docs-attachment-row">
+            <span style="color:var(--text-muted);flex-shrink:0">${I.attach}</span>
+            <span class="docs-attachment-name">${this.esc(a.filename)}</span>
+            <span class="docs-attachment-meta">${this.fmtBytes(a.size_bytes)} · ${this.esc(a.uploader_name || '')} · ${this.relDateTime(a.created_at)}</span>
+            <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px;flex-shrink:0" onclick="App.downloadDocAttachment(${docId},${a.id},'${this.esc(a.filename)}')">Download</button>
+            <button class="btn-icon" onclick="App.deleteDocAttachment(${docId},${a.id})" title="Delete" style="color:var(--text-faint);flex-shrink:0">${I.trash}</button>
+          </div>`).join('')
+        : '<div class="docs-attachments-empty">No attachments yet.</div>';
+      $('#docs-attachments-list').html(html);
+    } catch (e) {
+      $('#docs-attachments-list').html('<div style="color:var(--p-high);font-size:12px">Failed to load attachments.</div>');
+    }
+  },
+
+  async uploadDocAttachments(docId, fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const $list = $('#docs-attachments-list');
+    for (const f of files) {
+      if (f.size > 25 * 1024 * 1024) {
+        alert(`${f.name} is larger than 25MB and was skipped.`);
+        continue;
+      }
+      const fd = new FormData();
+      fd.append('file', f);
+      $list.prepend(`<div class="docs-attachment-row" id="upload-prog-${this.esc(f.name)}"><span class="spinner"></span> Uploading ${this.esc(f.name)}…</div>`);
+      try {
+        await $.ajax({
+          url: `/api/documents/${docId}/attachments`, method: 'POST',
+          data: fd, processData: false, contentType: false,
+        });
+        $(`#upload-prog-${this.esc(f.name)}`).remove();
+      } catch (e) {
+        $(`#upload-prog-${this.esc(f.name)}`).remove();
+        const msg = e.status === 413 ? 'File too large (max 25MB)' : (e.responseJSON?.error || e.statusText || 'Upload failed');
+        alert(`Failed to upload ${f.name}: ${msg}`);
+      }
+    }
+    // Reset the file input so the same file can be re-selected
+    $('#doc-attachment-input').val('');
+    await this.loadDocAttachmentsInline(docId);
+  },
+
+  downloadDocAttachment(docId, attachmentId, filename) {
+    // Use XHR with blob so the auth header is sent
+    $.ajax({
+      url: `/api/documents/${docId}/attachments/${attachmentId}/download`,
+      method: 'GET',
+      xhrFields: { responseType: 'blob' },
+    }).done(function(blob) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }).fail(function(e) {
+      alert('Download failed: ' + (e.statusText || 'Unknown error'));
+    });
+  },
+
+  async deleteDocAttachment(docId, attachmentId) {
+    if (!confirm('Remove this attachment? This cannot be undone.')) return;
+    try {
+      await $.ajax({ url: `/api/documents/${docId}/attachments/${attachmentId}`, method: 'DELETE' });
+      await this.loadDocAttachmentsInline(docId);
+    } catch (e) {
+      alert('Failed to remove attachment: ' + (e.responseJSON?.error || e.statusText));
     }
   },
 

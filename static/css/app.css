@@ -575,3 +575,204 @@
     .docs-ctx-item:hover { background: var(--bg-hover); }
     .docs-ctx-item.danger { color: var(--p-high); }
     .docs-ctx-item.danger:hover { background: oklch(0.97 0.015 25); }
+
+    /* ── Docs search ── */
+    .docs-search-wrap {
+      position: relative; margin-bottom: 10px;
+    }
+    .docs-search {
+      width: 100%; padding: 7px 10px 7px 30px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--bg-elev); font-family: inherit;
+      font-size: 13px; outline: none; color: var(--text);
+      transition: border-color 0.12s;
+    }
+    .docs-search:focus { border-color: var(--accent); }
+    .docs-search-icon {
+      position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+      color: var(--text-faint); pointer-events: none;
+    }
+    .docs-search-results {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 600;
+      background: var(--bg-elev); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow-md);
+      max-height: 320px; overflow-y: auto;
+    }
+    .docs-search-result-row {
+      display: flex; flex-direction: column; gap: 2px;
+      padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--border);
+      font-size: 12.5px;
+    }
+    .docs-search-result-row:last-child { border-bottom: none; }
+    .docs-search-result-row:hover { background: var(--bg-hover); }
+    .docs-search-result-title { font-weight: 500; color: var(--text); }
+    .docs-search-result-snippet { color: var(--text-muted); font-size: 11.5px; line-height: 1.45; }
+    .docs-search-result-snippet mark { background: rgba(255,200,0,.35); padding: 0 2px; border-radius: 2px; font-style: normal; }
+    .docs-search-empty { padding: 12px; text-align: center; color: var(--text-faint); font-size: 12.5px; }
+
+    /* ── Docs editor ── */
+    .docs-editor { display: flex; flex-direction: column; gap: 12px; }
+    .docs-editor-title-input {
+      width: 100%; font-size: 22px; font-weight: 700; letter-spacing: -0.02em;
+      border: none; outline: none; background: transparent;
+      color: var(--text); font-family: inherit;
+      padding: 0; margin: 0;
+    }
+    .docs-editor-title-input::placeholder { color: var(--text-faint); }
+    .docs-editor-hint {
+      font-size: 11.5px; color: var(--text-faint); margin-bottom: 2px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .docs-editor-textarea {
+      width: 100%; min-height: 400px;
+      font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6;
+      padding: 10px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius); background: var(--bg-elev);
+      color: var(--text); resize: vertical; outline: none;
+      transition: border-color 0.12s;
+    }
+    .docs-editor-textarea:focus { border-color: var(--accent); }
+    .docs-editor-preview {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 16px; background: var(--bg-sunken);
+      min-height: 80px;
+    }
+    .docs-editor-preview-label {
+      font-size: 11px; font-weight: 500; color: var(--text-faint);
+      text-transform: uppercase; letter-spacing: 0.04em;
+      margin-bottom: 10px;
+    }
+    .docs-editor-change-note {
+      width: 100%; padding: 7px 10px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      font-family: inherit; font-size: 13px; outline: none;
+      background: var(--bg-elev); color: var(--text);
+      transition: border-color 0.12s;
+    }
+    .docs-editor-change-note:focus { border-color: var(--accent); }
+    .docs-editor-actions { display: flex; gap: 6px; align-items: center; }
+
+    /* ── Tag input ── */
+    .docs-tag-input-wrap {
+      display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+      padding: 5px 8px; border: 1px solid var(--border);
+      border-radius: var(--radius); background: var(--bg-elev);
+      min-height: 34px; position: relative; cursor: text;
+      transition: border-color 0.12s;
+    }
+    .docs-tag-input-wrap:focus-within { border-color: var(--accent); }
+    .docs-tag-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 10px;
+      background: var(--accent-soft); border: 1px solid var(--accent-text);
+      font-size: 11.5px; color: var(--accent-text); font-weight: 500;
+    }
+    .docs-tag-pill button {
+      display: grid; place-items: center; width: 14px; height: 14px;
+      border: none; background: none; cursor: pointer; padding: 0;
+      color: var(--accent-text); border-radius: 50%;
+      font-size: 11px; line-height: 1;
+    }
+    .docs-tag-pill button:hover { background: var(--accent-text); color: white; }
+    .docs-tag-type-input {
+      border: none; outline: none; background: transparent;
+      font-family: inherit; font-size: 12.5px; color: var(--text);
+      min-width: 80px; flex: 1;
+    }
+    .docs-tag-suggestions {
+      position: absolute; top: calc(100% + 3px); left: 0; right: 0; z-index: 700;
+      background: var(--bg-elev); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow-md);
+      overflow: hidden;
+    }
+    .docs-tag-suggestion-item {
+      padding: 5px 10px; cursor: pointer; font-size: 12.5px; color: var(--text);
+    }
+    .docs-tag-suggestion-item:hover { background: var(--bg-hover); }
+
+    /* ── Viewer tag pills (read-only) ── */
+    .docs-tag-viewer-pill {
+      display: inline-block; padding: 2px 7px;
+      border-radius: 10px; background: var(--bg-sunken);
+      border: 1px solid var(--border); font-size: 11px; color: var(--text-muted);
+    }
+
+    /* ── Version history ── */
+    .docs-versions { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 16px; }
+    .docs-versions-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .docs-versions-title {
+      font-size: 12px; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .docs-version-row {
+      display: flex; align-items: baseline; gap: 8px;
+      padding: 7px 0; border-bottom: 1px solid var(--border);
+      font-size: 12.5px;
+    }
+    .docs-version-row:last-child { border-bottom: none; }
+    .docs-version-badge {
+      font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+      color: var(--text-faint); flex-shrink: 0; min-width: 32px;
+    }
+    .docs-version-current-badge {
+      display: inline-block; padding: 1px 5px; border-radius: 3px;
+      font-size: 9.5px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.04em; background: var(--accent-soft); color: var(--accent-text);
+      flex-shrink: 0;
+    }
+    .docs-version-note { flex: 1; color: var(--text-muted); font-style: italic; }
+    .docs-version-time { color: var(--text-faint); font-size: 11px; flex-shrink: 0; }
+    .docs-version-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+    /* ── Linked tickets section ── */
+    .docs-links { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 16px; }
+    .docs-links-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .docs-links-title {
+      font-size: 12px; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .docs-link-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 0; border-bottom: 1px solid var(--border);
+      font-size: 12.5px; cursor: pointer;
+    }
+    .docs-link-row:last-of-type { border-bottom: none; }
+    .docs-link-row:hover { color: var(--accent-text); }
+    .docs-link-id { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); flex-shrink: 0; }
+    .docs-link-name { flex: 1; font-weight: 500; color: var(--text); }
+    .docs-link-remove {
+      width: 20px; height: 20px; display: grid; place-items: center;
+      border: none; background: none; cursor: pointer;
+      color: var(--text-faint); border-radius: 3px;
+    }
+    .docs-link-remove:hover { background: var(--bg-hover); color: var(--p-high); }
+    .docs-links-empty { color: var(--text-faint); font-size: 12.5px; padding: 6px 0; }
+
+    /* ── Attachments section ── */
+    .docs-attachments { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 16px; }
+    .docs-attachments-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .docs-attachments-title {
+      font-size: 12px; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .docs-attachment-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 4px; border-radius: var(--radius);
+      font-size: 12.5px;
+    }
+    .docs-attachment-row:hover { background: var(--bg-sunken); }
+    .docs-attachment-name { flex: 1; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .docs-attachment-meta { color: var(--text-faint); font-size: 11px; white-space: nowrap; }
+    .docs-attachments-empty { color: var(--text-faint); font-size: 12.5px; padding: 6px 0; }
+
+    /* FTS5 snippet highlight */
+    mark { background: rgba(255,200,0,.35); padding: 0 2px; border-radius: 2px; }
