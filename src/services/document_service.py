@@ -61,13 +61,10 @@ class DocumentService:
         if folder_id is not None:
             q = q.filter(Document.folder_id == folder_id)
         if tag:
-            Tag = getattr(_models, 'Tag', None)
-            DocumentTag = getattr(_models, 'DocumentTag', None)
-            if Tag is not None and DocumentTag is not None:
-                q = (q.join(DocumentTag, DocumentTag.document_id == Document.id)
-                      .join(Tag, Tag.id == DocumentTag.tag_id)
-                      .filter(Tag.name == tag.lower()))
-            # else: tag filter is a no-op until Task 6 lands
+            from src.models import Tag, DocumentTag
+            q = (q.join(DocumentTag, DocumentTag.document_id == Document.id)
+                  .join(Tag, Tag.id == DocumentTag.tag_id)
+                  .filter(Tag.name == tag.lower()))
         q = q.order_by(Document.sort_order, Document.title)
         if limit is not None:
             q = q.limit(limit)
@@ -82,16 +79,13 @@ class DocumentService:
             return None
         out = DocumentService._serialize(d)
 
-        # TODO(task-6): drop TagService import guard once tag_service lands.
-        TagService = None
+        from src.services.tag_service import TagService
+        out['tags'] = TagService.list_for_document(doc_id)
+
         # TODO(task-7): drop DocumentLinkService import guard once document_link_service lands.
         DocumentLinkService = None
         # TODO(task-8): drop AttachmentService import guard once attachment_service gains list_for_document.
         AttachmentService = None
-        try:
-            from src.services.tag_service import TagService  # noqa: F811
-        except ImportError:
-            pass
         try:
             from src.services.document_link_service import DocumentLinkService  # noqa: F811
         except ImportError:
@@ -101,7 +95,6 @@ class DocumentService:
         except ImportError:
             pass
 
-        out['tags'] = TagService.list_for_document(doc_id) if TagService else []
         out['linked_ticket_ids'] = DocumentLinkService.list_ticket_ids(doc_id) if DocumentLinkService else []
         if AttachmentService and hasattr(AttachmentService, 'list_for_document'):
             out['attachments'] = AttachmentService.list_for_document(doc_id) or []
@@ -164,13 +157,9 @@ class DocumentService:
         HistoryService.log(entity_type='document', entity_id=d.id,
                            field_name='document_created', new_value=title)
 
-        # TODO(task-6): drop guard once tag_service lands
-        try:
-            from src.services.tag_service import TagService
-            for name in data.get('tags', []) or []:
-                TagService.attach(d.id, name)
-        except ImportError:
-            pass
+        from src.services.tag_service import TagService
+        for name in data.get('tags', []) or []:
+            TagService.attach(d.id, name)
 
         db.session.commit()
         return DocumentService.get(d.id)
@@ -216,16 +205,10 @@ class DocumentService:
                                new_value=data['sort_order'])
             changed = True
 
-        # TODO(task-6): drop guard once tag_service lands
         if 'tags' in data:
-            try:
-                from src.services.tag_service import TagService
-                TagService.set_for_document(doc_id, data['tags'])
-                changed = True
-            except ImportError:
-                # TagService not available yet — accept the request silently
-                # but do not stamp updated_by/updated_at for a no-op.
-                pass
+            from src.services.tag_service import TagService
+            TagService.set_for_document(doc_id, data['tags'])
+            changed = True
 
         if changed:
             d.updated_by = DocumentService._actor_id()
@@ -239,15 +222,13 @@ class DocumentService:
         if not d:
             return None
 
-        # TODO(task-6): drop guard once DocumentTag model lands
-        DocumentTag = getattr(_models, 'DocumentTag', None)
+        from src.models import DocumentTag
         # TODO(task-7): drop guard once DocumentTicketLink model lands
         DocumentTicketLink = getattr(_models, 'DocumentTicketLink', None)
         # TODO(task-8): drop guard once Attachment gains document_id column
         Attachment = getattr(_models, 'Attachment', None)
 
-        if DocumentTag is not None:
-            DocumentTag.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
+        DocumentTag.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
         if DocumentTicketLink is not None:
             DocumentTicketLink.query.filter_by(document_id=doc_id).delete(synchronize_session=False)
         if Attachment is not None and hasattr(Attachment, 'document_id'):

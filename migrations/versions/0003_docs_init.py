@@ -115,6 +115,9 @@ def upgrade():
         sa.ForeignKeyConstraint(['tag_id'], ['tags.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('document_id', 'tag_id'),
     )
+    # Index supports `Document.list(tag=...)` joining on tag_id.
+    # The composite PK only accelerates lookups starting with document_id.
+    op.create_index('ix_document_tags_tag_id', 'document_tags', ['tag_id'])
 
 
 def downgrade():
@@ -123,6 +126,7 @@ def downgrade():
     # (this revision grows across Tasks 4–8). Without these, a downgrade
     # crashes on the first table that wasn't yet present when the dev
     # originally ran upgrade.
+    op.drop_index('ix_document_tags_tag_id', table_name='document_tags', if_exists=True)
     op.drop_table('document_tags', if_exists=True)
     op.drop_table('tags', if_exists=True)
     op.drop_table('documents', if_exists=True)
