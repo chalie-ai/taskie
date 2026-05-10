@@ -57,14 +57,31 @@ class TagService:
         if not t:
             return False
         old_name = t.name
-        affected = DocumentTag.query.filter_by(tag_id=tag_id).count()
+
+        # Capture affected doc ids BEFORE the bulk delete so we can reindex
+        # them after the commit. FTS5 'tags' column (sqlite) and
+        # documents.search_body (mysql) need to drop this tag's text.
+        affected_doc_ids = [r.document_id for r in
+                            DocumentTag.query.filter_by(tag_id=tag_id).all()]
+
         DocumentTag.query.filter_by(tag_id=tag_id).delete(synchronize_session=False)
         db.session.delete(t)
         from src.services.history_service import HistoryService
         HistoryService.log(entity_type='tag', entity_id=tag_id,
                            field_name='tag_deleted',
-                           old_value=old_name, new_value=str(affected))
+                           old_value=old_name, new_value=str(len(affected_doc_ids)))
         db.session.commit()
+
+        # Reindex AFTER commit so search reflects the tag removal.
+        # Wrapped per-doc — a single failure shouldn't break the rest.
+        from src.services.document_search_service import DocumentSearchService
+        for did in affected_doc_ids:
+            try:
+                DocumentSearchService.reindex_document(did)
+            except Exception:
+                current_app.logger.warning(
+                    "reindex failed after tag delete doc_id=%s", did)
+
         return True
 
     @staticmethod

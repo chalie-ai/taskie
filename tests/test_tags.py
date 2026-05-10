@@ -102,6 +102,34 @@ def test_set_for_document_atomic_on_failure(db, monkeypatch):
     assert sorted(names) == ['keep1', 'keep2']
 
 
+def test_delete_tag_reindexes_affected_documents(db):
+    """When a tag is deleted, the FTS index for every affected document
+    must drop that tag's text — searching for the tag must NOT return the
+    formerly-tagged document."""
+    from src.services.document_service import DocumentService
+    from src.services.tag_service import TagService
+    from src.services.document_search_service import DocumentSearchService
+
+    # Create a doc with a unique tag.
+    doc = DocumentService.create({'title': 'Architecture',
+                                  'space_type': 'global',
+                                  'body_md': 'doc body',
+                                  'tags': ['ghost-tag-xyz']})
+
+    # Sanity: the tag is searchable.
+    rows = DocumentSearchService.search(q='ghost-tag-xyz')
+    assert any(r['id'] == doc['id'] for r in rows)
+
+    # Delete the tag.
+    tag_id = TagService.list(q='ghost-tag-xyz')[0]['id']
+    TagService.delete(tag_id)
+
+    # Search for the deleted tag — the doc should NO LONGER match.
+    rows = DocumentSearchService.search(q='ghost-tag-xyz')
+    assert not any(r['id'] == doc['id'] for r in rows), \
+        "FTS index still contains the deleted tag's text"
+
+
 def test_delete_writes_activity_log(db):
     from src.services.tag_service import TagService
     from src.services.document_service import DocumentService
