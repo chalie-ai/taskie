@@ -14,6 +14,10 @@ That's what Taskie is.
 
 Both interfaces talk to the same database. Your data stays on your machine.
 
+![Taskie board and ticket editor](docs/images/ticket-preview.png)
+
+![Taskie docs with version history, linked tickets, and attachments](docs/images/docs-preview.png)
+
 ## Architecture
 
 ```
