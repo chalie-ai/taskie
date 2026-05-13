@@ -67,13 +67,14 @@ def create_app():
         alembic_upgrade()
         from src.services.user_service import UserService
         UserService.bootstrap_master(app)
-        # One-shot data backfill for status placeholders (TKT-235 cleanup).
+        # One-shot data backfill: coerce legacy/removed statuses to 'todo'.
         from src.models import Ticket
         legacy = Ticket.query.filter(
-            db.or_(Ticket.status.is_(None), Ticket.status == '', Ticket.status == '-')
+            db.or_(Ticket.status.is_(None), Ticket.status == '',
+                   Ticket.status == '-', Ticket.status == 'backlog')
         )
         if legacy.count():
-            legacy.update({Ticket.status: 'backlog'}, synchronize_session=False)
+            legacy.update({Ticket.status: 'todo'}, synchronize_session=False)
             db.session.commit()
 
     @app.route('/')

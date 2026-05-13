@@ -313,13 +313,13 @@ call("update_cycle", {"cycle_id": cycle["id"], "status": "completed"})
 
 | Field | Allowed values |
 |---|---|
-| `status` (ticket) | `backlog`, `todo`, `progress`, `review`, `done`, `cancel` |
+| `status` (ticket) | `todo`, `progress`, `review`, `done`, `cancel` |
 | `type` | `bug`, `feature`, `chore` |
 | `priority` | `urgent`, `high`, `medium`, `low`, `none` |
 | `relationship_type` | `related`, `depends_on`, `blocks` |
 | `pr_link.status` | `open`, `merged`, `closed` |
 
-`-` is no longer a valid status — the placeholder option was removed in TKT-241. Pre-existing rows are backfilled to `backlog` on server startup, and the API coerces any incoming `-` / empty / `null` status to `backlog`. Always send one of the six values above.
+`backlog` is no longer a valid status — tickets appear in the Backlog view when they have no cycle (`cycle_id` is null), not by status. The API coerces any incoming `backlog` / `-` / empty / `null` status to `todo`. Always send one of the five values above.
 
 ---
 
@@ -329,7 +329,7 @@ call("update_cycle", {"cycle_id": cycle["id"], "status": "completed"})
 
 ```
 list_tickets                                  → see everything
-list_tickets status=backlog                   → tickets needing triage
+list_tickets no_cycle=true                    → tickets in backlog (no cycle)
 list_tickets status=todo                      → ready-to-start tickets
 list_tickets assignee=<your_name>             → already assigned to you
 list_tickets search=<keyword>                 → full-text search on name + description
@@ -367,7 +367,7 @@ for spec in specs:
     r = call("create_ticket", {**spec,
                                "project_id": project_id,
                                "cycle_id": cycle_id,
-                               "status": "backlog"})
+                               "status": "todo"})
     print(f"created {r['display_id']}: {r['name']}")
 ```
 
@@ -378,7 +378,7 @@ for spec in specs:
 1. **Read first.** `get_ticket` + `list_comments` before doing anything.
 2. **Announce intent.** Comment when you start, when you open a PR, when you finish.
 3. **Link every PR.** Use `submit_pr_link` so the ticket has a permanent record.
-4. **Move statuses honestly.** `backlog` → `todo` → `progress` → `review` → `done`.
+4. **Move statuses honestly.** `todo` → `progress` → `review` → `done`.
 5. **Use relationships.** `depends_on` / `blocks` / `related` — capture the real graph.
 6. **Reference tickets by `display_id` (`TKT-NNN`)** when talking to humans, by `id` (int) when calling the API.
 7. **Never log the token.** Read it from env, pass it on the wire, don't print it.

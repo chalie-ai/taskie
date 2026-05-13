@@ -11,7 +11,7 @@ def get_stats():
     if cycle_id:
         q = q.filter(Ticket.cycle_id == cycle_id)
     inbox = q.filter(Ticket.status.notin_(['done', 'cancel'])).count()
-    triage = q.filter(Ticket.status == 'backlog').count()
+    triage = q.filter(Ticket.cycle_id.is_(None)).count()
     return jsonify({
         'inbox': inbox,
         'triage': triage,

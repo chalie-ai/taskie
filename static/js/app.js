@@ -20,10 +20,10 @@ const I = {
   doc:      '<svg class="svg-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h6l3 3v9a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M10 2v3h3"/></svg>',
 };
 
-const STATUSES = ['backlog','todo','progress','review','done','cancel'];
-const STATUS_LABELS = { backlog:'Backlog', todo:'Todo', progress:'In Progress', review:'In Review', done:'Done', cancel:'Cancelled' };
-const STATUS_DOT = { backlog:'dot-backlog', todo:'dot-todo', progress:'dot-progress', review:'dot-review', done:'dot-done', cancel:'dot-cancel' };
-const STATUS_COLOR_CLASS = { backlog:'status-color-backlog', todo:'status-color-todo', progress:'status-color-progress', review:'status-color-review', done:'status-color-done', cancel:'status-color-cancel' };
+const STATUSES = ['todo','progress','review','done','cancel'];
+const STATUS_LABELS = { todo:'Todo', progress:'In Progress', review:'In Review', done:'Done', cancel:'Cancelled' };
+const STATUS_DOT = { todo:'dot-todo', progress:'dot-progress', review:'dot-review', done:'dot-done', cancel:'dot-cancel' };
+const STATUS_COLOR_CLASS = { todo:'status-color-todo', progress:'status-color-progress', review:'status-color-review', done:'status-color-done', cancel:'status-color-cancel' };
 
 const TYPE_LETTER = { bug:'B', feature:'F', chore:'C' };
 const TYPE_CLASS = { bug:'bug', feature:'feature', chore:'chore' };
@@ -335,7 +335,7 @@ const App = {
   boardHTML() {
     const filtered = this.filtered();
     // Backlog is now the standalone Backlog page (cycle_id IS NULL); no column.
-    const boardStatuses = STATUSES.filter(s => s !== 'cancel' && s !== 'backlog');
+    const boardStatuses = STATUSES.filter(s => s !== 'cancel');
     let cols = '';
     boardStatuses.forEach(s => {
       const items = s === 'done'
@@ -438,7 +438,7 @@ const App = {
     }
     // Group by project, then within a project sort by priority then status.
     const PRIO_RANK = { urgent: 0, high: 1, medium: 2, low: 3, none: 4 };
-    const STATUS_RANK = { progress: 0, review: 1, todo: 2, backlog: 3, done: 4, cancel: 5 };
+    const STATUS_RANK = { progress: 0, review: 1, todo: 2, done: 3, cancel: 4 };
     const byProject = new Map();
     for (const t of filtered) {
       const k = t.project_id || 'none';
@@ -489,7 +489,10 @@ const App = {
       const cid = parseInt($(this).val());
       const tid = parseInt($(this).data('ticket-id'));
       if (!cid || !tid) return;
-      $.ajax({ url: `/api/tickets/${tid}`, method: 'PATCH', contentType: 'application/json', data: JSON.stringify({ cycle_id: cid }) })
+      const patch = { cycle_id: cid };
+      const ticket = self.tickets.find(t => t.id === tid);
+      if (ticket && (!ticket.status || ticket.status === 'backlog')) patch.status = 'todo';
+      $.ajax({ url: `/api/tickets/${tid}`, method: 'PATCH', contentType: 'application/json', data: JSON.stringify(patch) })
         .then(updated => { self.tickets = self.tickets.map(t => t.id === tid ? { ...t, ...updated } : t); self.render(); })
         .fail(e => { console.error(e); alert('Failed to assign cycle'); });
     });
@@ -1978,7 +1981,7 @@ const App = {
           const t = this.tickets.find(x => x.id === tid);
           if (t) {
             return `<div class="docs-link-row" onclick="App.openTicket(${t.id})">
-              <span class="dot ${STATUS_DOT[t.status] || 'dot-backlog'}" style="width:7px;height:7px;border-radius:50%;flex-shrink:0"></span>
+              <span class="dot ${STATUS_DOT[t.status] || 'dot-todo'}" style="width:7px;height:7px;border-radius:50%;flex-shrink:0"></span>
               <span class="docs-link-id">${this.esc(t.display_id)}</span>
               <span class="docs-link-name">${this.esc(t.name)}</span>
               <button class="docs-link-remove" onclick="event.stopPropagation();App.unlinkDocTicket(${doc.id},${t.id})" title="Unlink">${I.close}</button>
@@ -2745,7 +2748,7 @@ const App = {
       }
       $('#link-ticket-results').html(filtered.map(t => `
         <div class="cmd-row" onclick="App._confirmLinkTicket(${docId},${t.id})">
-          <span class="dot ${STATUS_DOT[t.status] || 'dot-backlog'}" style="width:7px;height:7px;border-radius:50%;flex-shrink:0"></span>
+          <span class="dot ${STATUS_DOT[t.status] || 'dot-todo'}" style="width:7px;height:7px;border-radius:50%;flex-shrink:0"></span>
           <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-faint)">${this.esc(t.display_id)}</span>
           <span style="flex:1">${this.esc(t.name)}</span>
         </div>
@@ -2933,7 +2936,7 @@ const App = {
         const $row = $(`#docs-linked-ticket-${ticketId}`);
         if (!$row.length) return; // row may have been removed (unlinked)
         $row.html(`
-          <span class="dot ${STATUS_DOT[t.status] || 'dot-backlog'}" style="width:7px;height:7px;border-radius:50%;flex-shrink:0"></span>
+          <span class="dot ${STATUS_DOT[t.status] || 'dot-todo'}" style="width:7px;height:7px;border-radius:50%;flex-shrink:0"></span>
           <span class="docs-link-id">${this.esc(t.display_id)}</span>
           <span class="docs-link-name">${this.esc(t.name)}</span>
           <button class="docs-link-remove" onclick="event.stopPropagation();App.unlinkDocTicket(${docId},${t.id})" title="Unlink">${I.close}</button>

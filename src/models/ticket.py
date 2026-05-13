@@ -10,7 +10,7 @@ class Ticket(db.Model):
     description = db.Column(db.Text)
     type = db.Column(db.String(20), default='feature')
     priority = db.Column(db.String(20), default='none')
-    status = db.Column(db.String(20), default='backlog')
+    status = db.Column(db.String(20), default='todo')
     project_id = db.Column(db.Integer, db.ForeignKey('projects.id'))
     cycle_id = db.Column(db.Integer, db.ForeignKey('cycles.id'), nullable=True)
     assignee = db.Column(db.String(255), nullable=True)

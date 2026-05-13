@@ -89,15 +89,15 @@ class TicketService:
 
     @staticmethod
     def create_ticket(data):
-        if data.get('status') in (None, '', '-'):
-            data['status'] = 'backlog'
+        if data.get('status') in (None, '', '-', 'backlog'):
+            data['status'] = 'todo'
         due_date = data.get('due_date')
         if isinstance(due_date, str) and due_date:
             due_date = datetime.strptime(due_date, '%Y-%m-%d').date()
         elif due_date == '':
             due_date = None
         max_order = db.session.query(db.func.max(Ticket.sort_order)).filter(
-            Ticket.status == data.get('status', 'backlog')).scalar() or 0
+            Ticket.status == data.get('status', 'todo')).scalar() or 0
         assignee_id = data.get('assignee_id')
         assignee_name = data.get('assignee', '')
         if assignee_id and not assignee_name:
@@ -111,7 +111,7 @@ class TicketService:
             description=data.get('description'),
             type=data.get('type', 'feature'),
             priority=data.get('priority', 'none'),
-            status=data.get('status', 'backlog'),
+            status=data.get('status', 'todo'),
             project_id=data.get('project_id'),
             cycle_id=data.get('cycle_id'),
             assignee=assignee_name,
@@ -132,8 +132,8 @@ class TicketService:
             return None
         # Coerce status placeholders to backlog: the `-` option is gone but
         # an old client or API caller could still send it (or empty string).
-        if 'status' in data and data['status'] in (None, '', '-'):
-            data['status'] = 'backlog'
+        if 'status' in data and data['status'] in (None, '', '-', 'backlog'):
+            data['status'] = 'todo'
         # Skip sort_order in the activity log — drag-reorder is high-volume noise.
         allowed = ['name', 'description', 'type', 'priority', 'status',
                    'project_id', 'cycle_id', 'assignee', 'assignee_id', 'due_date', 'sort_order']
