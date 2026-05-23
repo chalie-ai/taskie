@@ -75,6 +75,8 @@ const App = {
   // Docs search XHR state (hoisted to avoid race conditions on re-bind)
   _searchXhr: null,
   _searchDebounceTimer: null,
+  // Sidebar project submenu state
+  _openProjectMenu: null,
 
   async init() {
     if (!AUTH.token()) { this.showLogin(); return; }
@@ -221,6 +223,8 @@ const App = {
       this.renderCrumbs();
       $('#content-area').html(this.backlogHTML());
       this.bindBacklogEvents();
+    } else if (this.view === 'project-cycles') {
+      this.renderProjectCyclesPage();
     } else if (isDocsView) {
       this.renderDocsPage();
     } else {
@@ -271,36 +275,27 @@ const App = {
     // Active state on nav items
     $('.sb-item.view-trigger').removeClass('active');
     $(`.sb-item.view-trigger[data-view="${this.view}"]`).addClass('active');
-    if (this.view === 'project') $(`.sb-item.project-item[data-id="${this.activeProjectId}"]`).addClass('active');
+    const projectViewActive = this.view === 'project' || this.view === 'project-cycles' || this.view === 'docs-project';
+    if (projectViewActive) $(`.sb-item.project-item[data-id="${this.activeProjectId}"]`).addClass('active');
 
     // Project list
     $('#sb-project-list').html(this.projects.map(p => {
       const count = this.tickets.filter(t => t.project_id === p.id && t.status !== 'done' && t.status !== 'cancel').length;
-      const act = (this.view === 'project' && this.activeProjectId === p.id) ? ' active' : '';
-      return `<button class="sb-item project-item${act}" data-id="${p.id}" onclick="App.selectProject(${p.id})">
-        <span class="sb-dot" style="background:${p.color}"></span><span class="sb-label">${p.name}</span><span class="sb-count">${count}</span>
-      </button>`;
-    }));
-
-    // Docs project list
-    if ($('#sb-docs-project-list').length) {
-      $('#sb-docs-project-list').html(this.projects.map(p => {
-        const isActive = this.view === 'docs-project' && this.docsContext.project_id === p.id;
-        const act = isActive ? ' active' : '';
-        return `<button class="sb-item${act}" onclick="App.setView('docs-project', ${p.id})">
-          <span class="sb-dot" style="background:${p.color}"></span>
-          <span class="sb-label">${this.esc(p.name)}</span>
-        </button>`;
-      }).join(''));
-    }
-
-    // Active state for docs-global
-    if (this.view === 'docs-global') {
-      $(`.sb-item.view-trigger[data-view="docs-global"]`).addClass('active');
-    }
+      const isOpen = this._openProjectMenu === p.id;
+      const act = (projectViewActive && this.activeProjectId === p.id) ? ' active' : '';
+      const submenu = isOpen ? `<div class="sb-project-submenu">
+        <button class="sb-project-submenu-item" onclick="event.stopPropagation();App.setView('docs-project',${p.id})">Docs</button>
+        <button class="sb-project-submenu-item" onclick="event.stopPropagation();App.setView('project-cycles',${p.id})">Cycles</button>
+      </div>` : '';
+      return `<div class="sb-project-wrap${isOpen ? ' open' : ''}">
+        <button class="sb-item project-item${act}" data-id="${p.id}" onclick="App.selectProject(${p.id})">
+          <span class="sb-dot" style="background:${p.color}"></span><span class="sb-label">${p.name}</span><span class="sb-count">${count}</span>
+        </button>${submenu}
+      </div>`;
+    }).join(''));
 
     // Cycle list
-    $('#sb-cycle-list').html(this.cycles.map(c => {
+    $('#sb-cycle-list').html(this.cycles.filter(c => c.status === 'in_progress').map(c => {
       const act = (this.view === 'cycle' && this.activeCycleId === c.id) ? ' active' : '';
       const nowBadge = c.active ? '<span class="sb-cycle-row-now">now</span>' : '';
       return `<div class="sb-cycle-row${act}">
@@ -535,6 +530,61 @@ const App = {
       <div class="page-header"><div><h1>Projects</h1><div class="sub">${this.projects.length} projects · ${this.tickets.length} tickets total</div></div><div style="display:flex;gap:6px"><button class="btn btn-secondary">${I.filter} Filter</button><button class="btn btn-primary" onclick="App.showNewProjectModal()">+ New project</button></div></div>
       <div class="projects-grid">${cards.join('')}</div>
     </div>`);
+  },
+
+  async renderProjectCyclesPage() {
+    const p = this.projects.find(p => p.id === this.activeProjectId);
+    $('#crumbs').html('');
+    $('#content-area').html('<div class="projects-page"><div style="padding:40px;text-align:center;color:var(--text-muted)">Loading cycles…</div></div>');
+    let cycles;
+    try {
+      cycles = await $.get(`/api/cycles?project_id=${this.activeProjectId}`);
+    } catch (e) {
+      $('#content-area').html(`<div class="projects-page"><div style="padding:40px;color:var(--p-high)">Failed to load cycles: ${this.esc(e?.responseJSON?.error || e?.statusText || String(e))}</div></div>`);
+      return;
+    }
+    const CYCLE_STATUS_LABELS = { planning: 'Planning', in_progress: 'In Progress', completed: 'Completed', pending: 'Pending' };
+    const STATUS_ORDER = ['in_progress', 'planning', 'pending', 'completed'];
+    const grouped = {};
+    cycles.forEach(c => {
+      const s = c.status || 'planning';
+      if (!grouped[s]) grouped[s] = [];
+      grouped[s].push(c);
+    });
+    const groups = STATUS_ORDER.filter(s => grouped[s]);
+    Object.keys(grouped).forEach(s => { if (!groups.includes(s)) groups.push(s); });
+    let html = '';
+    if (cycles.length === 0) {
+      html = '<div style="color:var(--text-faint);font-size:13.5px;padding:24px 0">No cycles yet.</div>';
+    } else {
+      groups.forEach(status => {
+        const label = CYCLE_STATUS_LABELS[status] || status;
+        html += `<div class="cycles-group">
+          <div class="cycles-group-header">${label}</div>
+          <div class="cycles-group-cards">${grouped[status].map(c => {
+            const pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+            const dateRange = (c.start_date || c.end_date) ? `<div class="cycle-card-dates">${this.esc(c.start_date || '')}${c.start_date && c.end_date ? ' → ' : ''}${this.esc(c.end_date || '')}</div>` : '';
+            return `<div class="cycle-card" onclick="App.selectCycle(${c.id})">
+              <div class="cycle-card-title">${I.sparkle} ${this.esc(c.title)}</div>
+              ${c.description ? `<div class="cycle-card-desc">${this.esc(c.description)}</div>` : ''}
+              ${dateRange}
+              <div class="cycle-card-progress"><div class="cycle-card-progress-fill" style="width:${pct}%"></div></div>
+              <div class="cycle-card-stats"><span>${c.done} of ${c.total} done</span><span>${pct}%</span></div>
+            </div>`;
+          }).join('')}</div>
+        </div>`;
+      });
+    }
+    const pName = p ? this.esc(p.name) : 'Project';
+    $('#content-area').html(`<div class="projects-page">
+      <div class="page-header"><div><h1>${pName} — Cycles</h1><div class="sub">${cycles.length} cycle${cycles.length !== 1 ? 's' : ''}</div></div></div>
+      ${html}
+    </div>`);
+  },
+
+  selectCycle(id) {
+    if (!this._guardDirtyEditor()) return;
+    this.activeCycleId = id; this.view = 'cycle'; this.render();
   },
 
   // ── Ticket panel ──
@@ -1476,7 +1526,7 @@ const App = {
       else if (e.key === 'Escape') { App.closeCmd(); }
     });
 
-    $('#cmd-overlay').on('click', '.cmd-row', function() { actOnRow(this); });
+    $('#cmd-list').on('click', '.cmd-row', function() { actOnRow(this); });
 
     $('#cmd-search-input').focus();
   },
@@ -1521,7 +1571,7 @@ const App = {
     }
     if (v === 'docs-project' && projectId) {
       this.view = 'docs-project';
-      this.activeProjectId = null;
+      this.activeProjectId = parseInt(projectId);
       this.docsContext = { space: 'project', project_id: parseInt(projectId) };
       this.activeFolderId = null;
       this.activeDocId = null;
@@ -1529,6 +1579,12 @@ const App = {
       this.folders = [];
       this.docs = [];
       this.loadDocsTree();
+      return;
+    }
+    if (v === 'project-cycles' && projectId) {
+      this.view = 'project-cycles';
+      this.activeProjectId = parseInt(projectId);
+      this.render();
       return;
     }
     this.view = v;
@@ -1541,7 +1597,8 @@ const App = {
   },
   selectProject(id) {
     if (!this._guardDirtyEditor()) return;
-    this.activeProjectId = id; this.view = 'project'; this.render();
+    this._openProjectMenu = (this._openProjectMenu === id) ? null : id;
+    this.renderSidebar();
   },
   showProjectsView() {
     if (!this._guardDirtyEditor()) return;

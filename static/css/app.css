@@ -784,3 +784,22 @@
 
     /* FTS5 snippet highlight */
     mark { background: rgba(255,200,0,.35); padding: 0 2px; border-radius: 2px; }
+
+    /* ── Project sidebar submenu ── */
+    .sb-project-wrap { position: relative; }
+    .sb-project-submenu { display: flex; flex-direction: column; padding: 2px 0 4px 22px; }
+    .sb-project-submenu-item { display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 4px 8px; font-size: 12.5px; color: var(--text-muted); border-radius: var(--radius); }
+    .sb-project-submenu-item:hover { background: var(--bg-hover); color: var(--text); }
+
+    /* ── Project cycles page ── */
+    .cycles-group { margin-bottom: 28px; }
+    .cycles-group-header { font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+    .cycles-group-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+    .cycle-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; cursor: pointer; transition: border-color 0.1s, box-shadow 0.1s; }
+    .cycle-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+    .cycle-card-title { font-weight: 600; font-size: 13.5px; display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+    .cycle-card-desc { font-size: 12.5px; color: var(--text-muted); margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cycle-card-dates { font-size: 11.5px; color: var(--text-faint); margin-bottom: 8px; }
+    .cycle-card-progress { height: 3px; background: var(--bg-active); border-radius: 2px; overflow: hidden; margin-bottom: 6px; }
+    .cycle-card-progress-fill { height: 100%; background: var(--accent); }
+    .cycle-card-stats { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }

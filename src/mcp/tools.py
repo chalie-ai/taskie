@@ -80,6 +80,8 @@ TOOL_DEFS = [
                 "status": {"type": "string"}, "assignee": {"type": "string"},
                 "assignee_id": {"type": "integer", "description": "Assignee user ID"},
                 "due_date": {"type": "string"},
+                "cycle_id": {"type": "integer", "description": "Cycle ID (set to move ticket into a cycle)"},
+                "project_id": {"type": "integer", "description": "Project ID"},
             },
             "required": ["ticket_id", "agent_token"],
         },
@@ -664,7 +666,7 @@ def call_tool(name: str, arguments: dict) -> str:
 
         elif name == "update_ticket":
             data = {k: v for k, v in arguments.items()
-                    if k in ('name', 'description', 'type', 'priority', 'status', 'assignee', 'assignee_id', 'due_date') and v is not None}
+                    if k in ('name', 'description', 'type', 'priority', 'status', 'assignee', 'assignee_id', 'due_date', 'cycle_id', 'project_id') and v is not None}
             if not data: return json.dumps({"error": "No fields to update"})
             r = client.patch(api_url(f'/tickets/{tid}'), json=data)
             r.raise_for_status()
