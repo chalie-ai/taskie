@@ -27,6 +27,8 @@ def create_cycle():
     data = request.get_json()
     if not data or not data.get('title'):
         return jsonify({'error': 'title is required'}), 400
+    if not data.get('project_ids'):
+        return jsonify({'error': 'At least one project is required'}), 400
     return jsonify(CycleService.create_cycle(data)), 201
 
 

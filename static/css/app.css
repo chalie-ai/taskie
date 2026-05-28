@@ -803,3 +803,6 @@
     .cycle-card-progress { height: 3px; background: var(--bg-active); border-radius: 2px; overflow: hidden; margin-bottom: 6px; }
     .cycle-card-progress-fill { height: 100%; background: var(--accent); }
     .cycle-card-stats { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .field-error { display: none; font-size: 12px; color: var(--p-high); margin-top: 4px; font-weight: 500; }
+    .cycle-card-projects { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+    .cycle-card-proj { display: inline-block; font-size: 10.5px; font-weight: 600; color: #fff; padding: 1px 7px; border-radius: 3px; }

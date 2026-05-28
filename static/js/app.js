@@ -214,6 +214,8 @@ const App = {
     $('.topbar-actions').toggle(!isDocsView);
     if (this.view === 'projects') {
       this.renderProjectsPage();
+    } else if (this.view === 'cycles') {
+      this.renderCyclesPage();
     } else if (this.view === 'users') {
       if (AUTH.user()?.role !== 'admin') { this.view = 'cycle'; this.render(); return; }
       this.renderUsersPage();
@@ -308,7 +310,7 @@ const App = {
   },
 
   renderCrumbs() {
-    if (this.view === 'projects' || this.view === 'users') return;
+    if (this.view === 'projects' || this.view === 'cycles' || this.view === 'users') return;
     let html = '';
     if (this.view === 'project' && this.activeProjectId) {
       const p = this.projects.find(p => p.id == this.activeProjectId);
@@ -529,6 +531,60 @@ const App = {
     $('#content-area').html(`<div class="projects-page">
       <div class="page-header"><div><h1>Projects</h1><div class="sub">${this.projects.length} projects · ${this.tickets.length} tickets total</div></div><div style="display:flex;gap:6px"><button class="btn btn-secondary">${I.filter} Filter</button><button class="btn btn-primary" onclick="App.showNewProjectModal()">+ New project</button></div></div>
       <div class="projects-grid">${cards.join('')}</div>
+    </div>`);
+  },
+
+  async renderCyclesPage() {
+    $('#crumbs').html('');
+    $('#content-area').html('<div class="projects-page"><div style="padding:40px;text-align:center;color:var(--text-muted)">Loading cycles…</div></div>');
+    let cycles;
+    try {
+      cycles = await $.get('/api/cycles');
+    } catch (e) {
+      $('#content-area').html(`<div class="projects-page"><div style="padding:40px;color:var(--p-high)">Failed to load cycles: ${this.esc(e?.responseJSON?.error || e?.statusText || String(e))}</div></div>`);
+      return;
+    }
+    this.cycles = cycles;
+    const CYCLE_STATUS_LABELS = { pending: 'Pending', in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled' };
+    const STATUS_ORDER = ['in_progress', 'pending', 'completed', 'cancelled'];
+    const grouped = {};
+    cycles.forEach(c => {
+      const s = c.status || 'pending';
+      if (!grouped[s]) grouped[s] = [];
+      grouped[s].push(c);
+    });
+    const groups = STATUS_ORDER.filter(s => grouped[s]);
+    Object.keys(grouped).forEach(s => { if (!groups.includes(s)) groups.push(s); });
+    let html = '';
+    if (cycles.length === 0) {
+      html = '<div style="color:var(--text-faint);font-size:13.5px;padding:24px 0">No cycles yet. Create one to get started.</div>';
+    } else {
+      groups.forEach(status => {
+        const label = CYCLE_STATUS_LABELS[status] || status;
+        html += `<div class="cycles-group">
+          <div class="cycles-group-header">${label}</div>
+          <div class="cycles-group-cards">${grouped[status].map(c => {
+            const pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+            const dateRange = (c.start_date || c.end_date) ? `<div class="cycle-card-dates">${this.esc(c.start_date || '')}${c.start_date && c.end_date ? ' → ' : ''}${this.esc(c.end_date || '')}</div>` : '';
+            const projTags = (c.projects || []).map(p => `<span class="cycle-card-proj" style="background:${p.color}">${this.esc(p.name)}</span>`).join('');
+            return `<div class="cycle-card" style="position:relative">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <div class="cycle-card-title" style="cursor:pointer" onclick="App.selectCycle(${c.id})">${I.sparkle} ${this.esc(c.title)}</div>
+                <button class="btn-icon" style="flex-shrink:0" onclick="event.stopPropagation();App.editCycle(${c.id})">${I.pencil}</button>
+              </div>
+              ${c.description ? `<div class="cycle-card-desc">${this.esc(c.description)}</div>` : ''}
+              ${projTags ? `<div class="cycle-card-projects">${projTags}</div>` : '<div class="cycle-card-projects"><span style="color:var(--p-high);font-size:11px">No project assigned</span></div>'}
+              ${dateRange}
+              <div class="cycle-card-progress"><div class="cycle-card-progress-fill" style="width:${pct}%"></div></div>
+              <div class="cycle-card-stats"><span>${c.done} of ${c.total} done</span><span>${pct}%</span></div>
+            </div>`;
+          }).join('')}</div>
+        </div>`;
+      });
+    }
+    $('#content-area').html(`<div class="projects-page">
+      <div class="page-header"><div><h1>Cycles</h1><div class="sub">${cycles.length} cycle${cycles.length !== 1 ? 's' : ''}</div></div><div style="display:flex;gap:6px"><button class="btn btn-primary" onclick="App.showNewCycleModal()">+ New cycle</button></div></div>
+      ${html}
     </div>`);
   },
 
@@ -1059,6 +1115,12 @@ const App = {
   },
 
   showNewCycleModal() {
+    const projOpts = this.projects.map(p => `
+      <label style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12.5px" onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background=''">
+        <input type="checkbox" class="nc-pid" value="${p.id}">
+        <span class="sb-dot" style="background:${p.color};display:inline-block;width:8px;height:8px;border-radius:50%"></span>
+        <span>${this.esc(p.name)}</span>
+      </label>`).join('');
     const modal = $(`
       <div class="cmd-overlay" style="z-index:1500" id="new-cycle-overlay" onclick="if(event.target===this) $('#new-cycle-overlay').remove()">
         <div class="cmd" style="padding:20px">
@@ -1072,6 +1134,10 @@ const App = {
             <div style="flex:1"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Start date</label><input type="date" class="form-control" id="nc-start" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px"></div>
             <div style="flex:1"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">End date</label><input type="date" class="form-control" id="nc-end" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px"></div>
           </div>
+          <div class="mb-3"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Projects <span style="color:var(--p-high)">*</span></label>
+            <div id="nc-proj-box" style="border:1px solid var(--border);border-radius:var(--radius);padding:4px;max-height:160px;overflow-y:auto">${projOpts || '<div style="padding:6px 8px;color:var(--text-muted);font-size:12px">No projects yet</div>'}</div>
+            <div id="nc-proj-err" class="field-error"></div>
+          </div>
           <div style="display:flex;justify-content:flex-end;gap:8px">
             <button class="btn btn-secondary" onclick="$('#new-cycle-overlay').remove()">Cancel</button>
             <button class="btn btn-primary" onclick="App.createCycle()">Create Cycle</button>
@@ -1084,8 +1150,16 @@ const App = {
   },
 
   async createCycle() {
+    $('#nc-proj-err').text('').hide();
+    $('#nc-proj-box').css('border-color', '');
     const title = $('#nc-title').val().trim();
-    if (!title) return;
+    if (!title) { $('#nc-title').focus(); return; }
+    const project_ids = $('#new-cycle-overlay .nc-pid:checked').map(function(){ return parseInt(this.value); }).get();
+    if (!project_ids.length) {
+      $('#nc-proj-err').text('Select at least one project').show();
+      $('#nc-proj-box').css('border-color', 'var(--p-high)');
+      return;
+    }
     try {
       const data = {
         title,
@@ -1093,6 +1167,7 @@ const App = {
         status: $('#nc-status').val(),
         start_date: $('#nc-start').val() || null,
         end_date: $('#nc-end').val() || null,
+        project_ids,
       };
       const c = await $.ajax({ url: '/api/cycles', method: 'POST', contentType: 'application/json', data: JSON.stringify(data) });
       this.cycles.push(c);
@@ -1129,8 +1204,9 @@ const App = {
             <div style="flex:1"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Start date</label><input type="date" class="form-control" id="ec-start" value="${c.start_date || ''}" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px"></div>
             <div style="flex:1"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">End date</label><input type="date" class="form-control" id="ec-end" value="${c.end_date || ''}" style="font-size:13px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px"></div>
           </div>
-          <div class="mb-3"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Projects</label>
-            <div style="border:1px solid var(--border);border-radius:var(--radius);padding:4px;max-height:160px;overflow-y:auto">${projOpts || '<div style="padding:6px 8px;color:var(--text-muted);font-size:12px">No projects yet</div>'}</div>
+          <div class="mb-3"><label class="form-label" style="font-size:12px;font-weight:500;color:var(--text-muted)">Projects <span style="color:var(--p-high)">*</span></label>
+            <div id="ec-proj-box" style="border:1px solid var(--border);border-radius:var(--radius);padding:4px;max-height:160px;overflow-y:auto">${projOpts || '<div style="padding:6px 8px;color:var(--text-muted);font-size:12px">No projects yet</div>'}</div>
+            <div id="ec-proj-err" class="field-error"></div>
           </div>
           <div style="display:flex;justify-content:space-between;gap:8px">
             <button class="btn btn-ghost" style="color:var(--p-high)" onclick="App.deleteCycle(${id})">Delete</button>
@@ -1147,9 +1223,16 @@ const App = {
   },
 
   async submitEditCycle(id) {
+    $('#ec-proj-err').text('').hide();
+    $('#ec-proj-box').css('border-color', '');
     const title = $('#ec-title').val().trim();
-    if (!title) { alert('Title is required'); return; }
+    if (!title) { $('#ec-title').focus(); return; }
     const project_ids = $('#edit-cycle-overlay .ec-pid:checked').map(function(){ return parseInt(this.value); }).get();
+    if (!project_ids.length) {
+      $('#ec-proj-err').text('Select at least one project').show();
+      $('#ec-proj-box').css('border-color', 'var(--p-high)');
+      return;
+    }
     const data = {
       title,
       description: $('#ec-desc').val().trim(),
@@ -1603,6 +1686,10 @@ const App = {
   showProjectsView() {
     if (!this._guardDirtyEditor()) return;
     this.view = 'projects'; this.activeProjectId = null; this.render();
+  },
+  showCyclesView() {
+    if (!this._guardDirtyEditor()) return;
+    this.view = 'cycles'; this.activeProjectId = null; this.render();
   },
 
   bindBoardEvents() {
